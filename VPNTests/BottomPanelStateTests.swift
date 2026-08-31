@@ -1,0 +1,353 @@
+import CoreGraphics
+import Testing
+@testable import VPN
+
+struct BottomPanelStateTests {
+    private let detents = BottomPanelDetents(
+        expandedHeight: 650,
+        intermediateHeight: 420,
+        islandHeight: 154,
+        bottomMargin: 34
+    )
+
+    @Test
+    func positionsMoveThroughAllThreeDetents() {
+        #expect(BottomPanelPosition.island.nextHigher == .intermediate)
+        #expect(BottomPanelPosition.intermediate.nextHigher == .expanded)
+        #expect(BottomPanelPosition.expanded.nextLower == .intermediate)
+        #expect(BottomPanelPosition.intermediate.nextLower == .island)
+    }
+
+    @Test
+    func detentsIncreaseInHeight() {
+        #expect(detents.height(for: .island) < detents.height(for: .intermediate))
+        #expect(detents.height(for: .intermediate) < detents.height(for: .expanded))
+    }
+
+    @Test
+    func upwardFlickFromIslandExpandsPanel() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -24,
+            predictedEndTranslation: -400,
+            detents: detents
+        )
+
+        #expect(result == .expanded)
+    }
+
+    @Test
+    func smallDragKeepsCurrentPosition() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -12,
+            predictedEndTranslation: -28,
+            detents: detents
+        )
+
+        #expect(result == .island)
+    }
+
+    @Test
+    func downwardFlickFromExpandedCollapsesPanel() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .expanded,
+            translation: 32,
+            predictedEndTranslation: 400,
+            detents: detents
+        )
+
+        #expect(result == .island)
+    }
+
+    @Test
+    func collapsedLayoutIsAVisibleFloatingIsland() {
+        let layout = BottomPanelInterpolator.layout(
+            detents: detents,
+            position: .island,
+            dragTranslation: 0
+        )
+
+        #expect(layout.panelHeight == detents.islandHeight)
+        #expect(layout.horizontalInset == VelvetTheme.islandHorizontalInset)
+        #expect(layout.bottomInset == detents.bottomMargin)
+        #expect(layout.bottomCornerRadius == VelvetTheme.panelRadius)
+    }
+
+    @Test
+    func expandedLayoutBecomesFullWidthSheet() {
+        let layout = BottomPanelInterpolator.layout(
+            detents: detents,
+            position: .expanded,
+            dragTranslation: 0
+        )
+
+        #expect(layout.panelHeight == detents.expandedHeight)
+        #expect(layout.horizontalInset == 0)
+        #expect(layout.bottomInset == 0)
+        #expect(layout.listProgress == 1)
+    }
+
+    @Test
+    func islandDetentsStopShortOfTheFullScreen() {
+        let islandDetents = BottomPanelDetents.makeIsland(
+            screenHeight: 852,
+            safeAreaBottom: 34,
+            isAccessibilitySize: false
+        )
+
+        #expect(islandDetents.expandedHeight == 852 * 0.68)
+        #expect(islandDetents.islandHeight == 154)
+    }
+
+    @Test
+    func intermediateDetentUsesMoreThanHalfTheScreen() {
+        let detents = BottomPanelDetents.make(
+            screenHeight: 852,
+            safeAreaBottom: 34,
+            isAccessibilitySize: false
+        )
+
+        #expect(detents.intermediateHeight == 852 * 0.56)
+        #expect(detents.expandedHeight > detents.intermediateHeight)
+    }
+
+    @Test
+    func islandMarginNeverDropsBelowTheMinimumLayoutMargin() {
+        let detents = BottomPanelDetents.make(
+            screenHeight: 852,
+            safeAreaBottom: 0,
+            isAccessibilitySize: false
+        )
+
+        #expect(detents.bottomMargin == VelvetTheme.minimumBottomMargin)
+    }
+
+    @Test
+    func islandMarginClearsTheHomeIndicator() {
+        let detents = BottomPanelDetents.make(
+            screenHeight: 852,
+            safeAreaBottom: 34,
+            isAccessibilitySize: false
+        )
+
+        #expect(detents.bottomMargin == 34)
+        #expect(detents.contentBottomInset > detents.bottomMargin)
+    }
+
+    @Test
+    func connectionStateFollowsPrimaryActionFlow() {
+        var state = VPNConnectionState.disconnected
+
+        state.handlePrimaryAction()
+        #expect(state == .connecting)
+
+        state.completeConnection()
+        #expect(state == .connected)
+
+        state.handlePrimaryAction()
+        #expect(state == .disconnected)
+    }
+}
+
+struct VPNLocationCatalogTests {
+    @Test
+    func catalogOffersTwentyServersWithFlags() {
+        #expect(VPNLocation.samples.count == 20)
+        #expect(VPNLocation.samples.allSatisfy { !$0.flag.isEmpty })
+    }
+
+    @Test
+    func everyManualServerCarriesMapCoordinates() {
+        let manualServers = VPNLocation.samples.filter { $0.kind != .smart }
+
+        #expect(manualServers.allSatisfy { $0.coordinate != nil })
+        #expect(VPNLocation.samples.first(where: { $0.kind == .smart })?.coordinate == nil)
+    }
+
+    @Test(arguments: [
+        (GeoCoordinate(latitude: 43.1, longitude: 76.9), "Almaty"),
+        (GeoCoordinate(latitude: 48.9, longitude: 2.4), "Paris"),
+        (GeoCoordinate(latitude: 1.0, longitude: 104.2), "Singapore"),
+    ])
+    func mapTapResolvesToTheClosestServer(coordinate: GeoCoordinate, expectedCity: String) {
+        #expect(VPNLocation.nearest(to: coordinate)?.city == expectedCity)
+    }
+
+    @Test
+    func mapTapOverOpenWaterStillResolvesToAServer() {
+        let midAtlantic = GeoCoordinate(latitude: 30, longitude: -40)
+
+        #expect(VPNLocation.nearest(to: midAtlantic)?.city == "New York")
+    }
+
+    @Test
+    func automaticServerIsNeverTheResultOfAMapTap() {
+        let coordinates = VPNLocation.samples.compactMap(\.coordinate)
+
+        #expect(coordinates.allSatisfy { VPNLocation.nearest(to: $0)?.kind != .smart })
+    }
+
+    @Test
+    func catalogMixesMobileAndStandardServers() {
+        let kinds = Set(VPNLocation.samples.map(\.kind))
+
+        #expect(kinds.contains(.lte))
+        #expect(kinds.contains(.standard))
+        #expect(kinds.contains(.smart))
+    }
+
+    @Test
+    func countryGroupsCollapseMultipleServersIntoOneCountry() throws {
+        let groups = VPNLocation.countryGroups(from: VPNLocation.samples)
+        let russia = try #require(groups.first(where: { $0.name == "Russia" }))
+
+        #expect(groups.count == 16)
+        #expect(russia.locations.count == 3)
+        #expect(russia.locations.map(\.city) == ["Moscow", "Saint Petersburg", "Yekaterinburg"])
+    }
+
+    @Test
+    func countryGroupsExcludeAutomaticLocation() {
+        let groups = VPNLocation.countryGroups(from: VPNLocation.samples)
+
+        #expect(groups.allSatisfy { group in
+            group.locations.allSatisfy { $0.kind != .smart }
+        })
+    }
+
+    @Test
+    func locationPersistenceKeysAreUnique() {
+        let keys = VPNLocation.samples.map(\.persistenceKey)
+
+        #expect(Set(keys).count == keys.count)
+    }
+
+    @Test
+    func automaticServerIsPinnedAheadOfTheFastestManualOne() {
+        let results = VPNLocation.matching(VPNLocationQuery())
+
+        #expect(results.first?.kind == .smart)
+    }
+
+    @Test
+    func resultsAreOrderedByLatency() {
+        var query = VPNLocationQuery()
+        query.filter = .standard
+
+        let pings = VPNLocation.matching(query).map(\.ping)
+
+        #expect(pings == pings.sorted())
+    }
+
+    @Test(arguments: [
+        ("moscow", 1),
+        ("Germany", 2),
+        ("lte", 9),
+    ])
+    func searchMatchesCountryCityAndType(text: String, expectedCount: Int) {
+        var query = VPNLocationQuery()
+        query.text = text
+
+        #expect(VPNLocation.matching(query).count == expectedCount)
+    }
+
+    @Test
+    func filterNarrowsResultsToOneServerType() {
+        var query = VPNLocationQuery()
+        query.filter = .lte
+
+        let results = VPNLocation.matching(query)
+
+        #expect(!results.isEmpty)
+        #expect(results.allSatisfy { $0.kind == .lte })
+    }
+
+    @Test
+    func unknownQueryReturnsNoResults() {
+        var query = VPNLocationQuery()
+        query.text = "Atlantis"
+
+        #expect(VPNLocation.matching(query).isEmpty)
+    }
+
+    @Test
+    func latencyCutOffKeepsOnlyFastServers() {
+        var query = VPNLocationQuery()
+        query.fastOnly = true
+
+        let results = VPNLocation.matching(query)
+
+        #expect(!results.isEmpty)
+        #expect(results.allSatisfy { $0.ping < VPNLocation.fastPingThreshold })
+    }
+
+    @Test
+    func alphabeticalSortStillPinsTheAutomaticServer() {
+        var query = VPNLocationQuery()
+        query.sort = .country
+
+        let results = VPNLocation.matching(query)
+        let manualNames = results.filter { $0.kind != .smart }.map(\.name)
+
+        #expect(results.first?.kind == .smart)
+        #expect(manualNames == manualNames.sorted())
+    }
+}
+
+struct VPNLocationQueryTests {
+    @Test
+    func freshQueryHidesTheChipStrip() {
+        let query = VPNLocationQuery()
+
+        #expect(query.isDefault)
+        #expect(query.activeChips.isEmpty)
+    }
+
+    @Test
+    func freeTextAloneDoesNotCountAsAFilter() {
+        var query = VPNLocationQuery()
+        query.text = "berlin"
+
+        #expect(query.isDefault)
+        #expect(query.activeChips.isEmpty)
+    }
+
+    @Test
+    func everyNonDefaultChoiceGetsItsOwnChip() {
+        var query = VPNLocationQuery()
+        query.filter = .lte
+        query.fastOnly = true
+        query.sort = .country
+
+        #expect(!query.isDefault)
+        #expect(query.activeChips.count == 3)
+    }
+
+    @Test
+    func clearingAChipRestoresOnlyThatChoice() {
+        var query = VPNLocationQuery()
+        query.filter = .lte
+        query.fastOnly = true
+
+        query.clear(.fastOnly)
+
+        #expect(query.filter == .lte)
+        #expect(!query.fastOnly)
+        #expect(query.activeChips.count == 1)
+    }
+
+    @Test
+    func resettingFiltersKeepsTheTypedQuery() {
+        var query = VPNLocationQuery()
+        query.text = "tokyo"
+        query.filter = .standard
+        query.sort = .country
+        query.fastOnly = true
+
+        query.resetFilters()
+
+        #expect(query.isDefault)
+        #expect(query.text == "tokyo")
+    }
+}
