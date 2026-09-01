@@ -1,6 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Foreground for the connect step. The map and brand bar live in `HomeView`
+/// so the route change is a content crossfade, not a screen swap.
 struct ConnectVPNView: View {
     @Binding var route: AppRoute
 
@@ -9,70 +11,53 @@ struct ConnectVPNView: View {
     @State private var isShowingScannerMessage = false
 
     var body: some View {
-        ZStack {
-            VelvetBackground()
+        VStack(spacing: 24) {
+            Text("Connect VPN")
+                .font(.title2.bold())
+                .foregroundStyle(.primary)
 
-            VStack(spacing: 0) {
-                HStack {
-                    VelvetBrand()
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
+            configurationField
 
-                Spacer(minLength: 48)
+            HStack(spacing: 12) {
+                secondaryButton(
+                    title: "Upload",
+                    symbol: "folder",
+                    action: { isImportingFile = true }
+                )
 
-                VStack(spacing: 24) {
-                    Text("Connect VPN")
-                        .font(.title2.bold())
-                        .foregroundStyle(.primary)
-
-                    configurationField
-
-                    HStack(spacing: 12) {
-                        secondaryButton(
-                            title: "Upload",
-                            symbol: "folder",
-                            action: { isImportingFile = true }
-                        )
-
-                        secondaryButton(
-                            title: "Scan",
-                            symbol: "qrcode.viewfinder",
-                            action: { isShowingScannerMessage = true }
-                        )
-                    }
-
-                    Button {
-                        route = .home
-                    } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: "person.crop.circle")
-                                .font(.title)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Use Velvet VPN")
-                                    .font(.subheadline.weight(.semibold))
-                                Text("3 days free trial")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.72))
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.headline)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(16)
-                        .background(VelvetTheme.accent, in: RoundedRectangle(cornerRadius: 20))
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .accessibilityHint("Opens the VPN dashboard")
-                }
-                .padding(.horizontal, VelvetTheme.horizontalPadding)
-                .padding(.bottom, 20)
+                secondaryButton(
+                    title: "Scan",
+                    symbol: "qrcode.viewfinder",
+                    action: { isShowingScannerMessage = true }
+                )
             }
+
+            Button {
+                route = .home
+            } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: "person.crop.circle")
+                        .font(.title)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use Velvet VPN")
+                            .font(.subheadline.weight(.semibold))
+                        Text("3 days free trial")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.72))
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.headline)
+                }
+                .foregroundStyle(.white)
+                .padding(16)
+                .background(VelvetTheme.accent, in: RoundedRectangle(cornerRadius: 20))
+            }
+            .buttonStyle(PressScaleButtonStyle())
+            .accessibilityHint("Opens the VPN dashboard")
         }
         .fileImporter(
             isPresented: $isImportingFile,
@@ -129,9 +114,8 @@ struct ConnectVPNView: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
         }
-        .buttonStyle(.plain)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
         .buttonStyle(PressScaleButtonStyle())
     }
 }

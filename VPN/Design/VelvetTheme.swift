@@ -21,6 +21,11 @@ enum VelvetTheme {
     static let controlRadius: CGFloat = 16
     static let panelRadius: CGFloat = 28
     static let islandHorizontalInset: CGFloat = 20
+    /// Compact floating margin at the half-height detent (Find My card inset).
+    static let islandHalfMargin: CGFloat = 8
+    /// Pulls the expanded sheet slightly closer to the status bar than the raw
+    /// safe area inset.
+    static let expandedTopInsetReduction: CGFloat = 16
     /// Fallback bottom margin for devices without a home indicator, matching the
     /// minimum layout margin Apple recommends for edge-adjacent content.
     static let minimumBottomMargin: CGFloat = 16
@@ -59,11 +64,68 @@ struct VelvetBrand: View {
 }
 
 struct PressScaleButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .scaleEffect(
+                configuration.isPressed && !reduceMotion
+                    ? VelvetMotion.pressScale
+                    : 1
+            )
             .opacity(configuration.isPressed ? 0.86 : 1)
-            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(VelvetMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
+    }
+}
+
+/// Bottom contrast for the connect form. Kept on the form layer so it lifts
+/// with the keyboard instead of staying pinned to the map.
+struct OnboardingContentBackdrop: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: Color(.systemBackground).opacity(0.28), location: 0.2),
+                .init(color: Color(.systemBackground).opacity(0.9), location: 0.45),
+                .init(color: Color(.systemBackground), location: 0.62),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .padding(.top, -56)
+    }
+}
+
+private struct KeyboardLiftModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var keyboardOverlap: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, keyboardOverlap)
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: UIResponder.keyboardWillChangeFrameNotification
+                )
+            ) { notification in
+                guard
+                    let userInfo = notification.userInfo,
+                    let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+                    let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+                else { return }
+
+                let overlap = max(0, UIScreen.main.bounds.maxY - endFrame.origin.y)
+
+                withAnimation(VelvetMotion.keyboard(reduceMotion: reduceMotion, duration: duration)) {
+                    keyboardOverlap = overlap
+                }
+            }
+    }
+}
+
+extension View {
+    func keyboardLift() -> some View {
+        modifier(KeyboardLiftModifier())
     }
 }
 

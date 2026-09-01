@@ -68,7 +68,7 @@ struct VPNBottomPanel: View {
     }
 
     private var contentAnimation: Animation {
-        reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.22)
+        VelvetMotion.contentCrossfade(reduceMotion: reduceMotion)
     }
 
     private var panelHeader: some View {
@@ -192,6 +192,7 @@ struct VPNBottomPanel: View {
                 activeFilterChips
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
+                    .transition(VelvetMotion.filterChip(reduceMotion: reduceMotion))
             }
 
             favouritesSection
@@ -211,7 +212,7 @@ struct VPNBottomPanel: View {
         .textCase(nil)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.defaultMinListRowHeight, 44)
-        .animation(.easeOut(duration: 0.2), value: query)
+        .animation(VelvetMotion.queryChange(reduceMotion: reduceMotion), value: query)
     }
 
     private var searchRow: some View {
@@ -332,7 +333,7 @@ struct VPNBottomPanel: View {
             }
         } header: {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(VelvetMotion.accordion(reduceMotion: reduceMotion)) {
                     favouritesExpanded.toggle()
                 }
             } label: {
@@ -720,11 +721,7 @@ struct VPNBottomPanel: View {
     }
 
     private func movePanelFromHeader() {
-        withAnimation(
-            reduceMotion
-                ? .easeOut(duration: 0.2)
-                : .spring(response: 0.42, dampingFraction: 0.86)
-        ) {
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {
             position = position == .island ? .intermediate : position.nextLower
         }
     }
@@ -733,13 +730,13 @@ struct VPNBottomPanel: View {
         selectedLocation = location
         searchIsFocused = false
 
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {
             position = .island
         }
     }
 
     private func handleConnectionTap() {
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
             connectionState.handlePrimaryAction()
         }
 
@@ -747,7 +744,7 @@ struct VPNBottomPanel: View {
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
             }
         }

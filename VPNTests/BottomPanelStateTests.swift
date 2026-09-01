@@ -7,7 +7,8 @@ struct BottomPanelStateTests {
         expandedHeight: 650,
         intermediateHeight: 420,
         islandHeight: 154,
-        bottomMargin: 34
+        bottomMargin: 34,
+        topMargin: 0
     )
 
     @Test
@@ -25,9 +26,21 @@ struct BottomPanelStateTests {
     }
 
     @Test
-    func upwardFlickFromIslandExpandsPanel() {
+    func upwardFlickFromIslandMovesToIntermediate() {
         let result = BottomPanelSnapResolver.resolve(
             current: .island,
+            translation: -24,
+            predictedEndTranslation: -400,
+            detents: detents
+        )
+
+        #expect(result == .intermediate)
+    }
+
+    @Test
+    func upwardFlickFromIntermediateExpandsPanel() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .intermediate,
             translation: -24,
             predictedEndTranslation: -400,
             detents: detents
@@ -49,9 +62,21 @@ struct BottomPanelStateTests {
     }
 
     @Test
-    func downwardFlickFromExpandedCollapsesPanel() {
+    func downwardFlickFromExpandedMovesToIntermediate() {
         let result = BottomPanelSnapResolver.resolve(
             current: .expanded,
+            translation: 32,
+            predictedEndTranslation: 400,
+            detents: detents
+        )
+
+        #expect(result == .intermediate)
+    }
+
+    @Test
+    func downwardFlickFromIntermediateCollapsesToIsland() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .intermediate,
             translation: 32,
             predictedEndTranslation: 400,
             detents: detents
@@ -86,18 +111,40 @@ struct BottomPanelStateTests {
         #expect(layout.horizontalInset == 0)
         #expect(layout.bottomInset == 0)
         #expect(layout.listProgress == 1)
+        #expect(layout.sheetMorphProgress == 1)
     }
 
     @Test
-    func islandDetentsStopShortOfTheFullScreen() {
+    func intermediateLayoutShowsFullyOpaqueList() {
+        let layout = BottomPanelInterpolator.layout(
+            detents: detents,
+            position: .intermediate,
+            dragTranslation: 0
+        )
+
+        #expect(layout.panelHeight == detents.intermediateHeight)
+        #expect(layout.listProgress == 1)
+        #expect(layout.collapsedContentOpacity == 0)
+        #expect(layout.horizontalInset == VelvetTheme.islandHalfMargin)
+        #expect(layout.bottomInset == VelvetTheme.islandHalfMargin)
+        #expect(layout.bottomCornerRadius == VelvetTheme.panelRadius)
+        #expect(layout.sheetMorphProgress == 0)
+    }
+
+    @Test
+    func islandDetentsExpandToFullScreen() {
         let islandDetents = BottomPanelDetents.makeIsland(
             screenHeight: 852,
             safeAreaBottom: 34,
+            safeAreaTop: 59,
             isAccessibilitySize: false
         )
 
-        #expect(islandDetents.expandedHeight == 852 * 0.68)
+        #expect(islandDetents.expandedHeight == 852 - 59 + 16)
+        #expect(islandDetents.topMargin == 59 - 16)
+        #expect(islandDetents.intermediateHeight == 852 * 0.50)
         #expect(islandDetents.islandHeight == 154)
+        #expect(islandDetents.intermediateHeight < islandDetents.expandedHeight)
     }
 
     @Test

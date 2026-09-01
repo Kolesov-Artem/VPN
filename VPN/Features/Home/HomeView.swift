@@ -21,11 +21,13 @@ struct HomeView: View {
     @Binding var route: AppRoute
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var panelPosition = BottomPanelPosition.island
     @State private var connectionState = VPNConnectionState.disconnected
     @State private var selectedLocation = VPNLocation.samples[0]
     @State private var showsSettings = false
+    @State private var isPanelInteracting = false
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
 
     init(route: Binding<AppRoute>) {
@@ -66,12 +68,14 @@ struct HomeView: View {
     /// inset from the edges. Settings present from here because nothing else
     /// is on screen.
     private var islandLayout: some View {
-        mapLayer { safeAreaBottom, _ in
+        mapLayer { safeAreaBottom, safeAreaTop, _ in
             VPNIslandPanel(
                 position: $panelPosition,
                 connectionState: $connectionState,
                 selectedLocation: $selectedLocation,
-                safeAreaBottom: safeAreaBottom
+                isPanelInteracting: $isPanelInteracting,
+                safeAreaBottom: safeAreaBottom,
+                safeAreaTop: safeAreaTop
             )
         }
         .sheet(isPresented: $showsSettings) {
@@ -82,8 +86,8 @@ struct HomeView: View {
     /// Variant B: a system sheet owns the panel, which is what lets a swipe
     /// resize it first and scroll the list afterwards.
     private var sheetLayout: some View {
-        mapLayer { _, _ in EmptyView() }
-            .sheet(isPresented: .constant(true)) {
+        mapLayer { _, _, _ in EmptyView() }
+            .sheet(isPresented: isHomePresented) {
                 VPNBottomPanel(
                     position: $panelPosition,
                     connectionState: $connectionState,
@@ -119,16 +123,31 @@ struct HomeView: View {
             }
     }
 
+    private var isHomePresented: Binding<Bool> {
+        Binding(
+            get: { route == .home },
+            set: { isPresented in
+                if isPresented {
+                    route = .home
+                } else {
+                    route = .onboarding
+                }
+            }
+        )
+    }
+
     // The reader keeps the bottom safe area so the panel can size its margins
     // from the real home indicator inset before ignoring it.
     private func mapLayer<Panel: View>(
-        @ViewBuilder panel: @escaping (CGFloat, BottomPanelDetents) -> Panel
+        @ViewBuilder panel: @escaping (CGFloat, CGFloat, BottomPanelDetents) -> Panel
     ) -> some View {
         GeometryReader { proxy in
             let safeAreaBottom = proxy.safeAreaInsets.bottom
+            let safeAreaTop = proxy.safeAreaInsets.top
             let detents = detents(
                 screenHeight: proxy.size.height + safeAreaBottom,
-                safeAreaBottom: safeAreaBottom
+                safeAreaBottom: safeAreaBottom,
+                safeAreaTop: safeAreaTop
             )
             let summaryPadding = detents.summaryBottomPadding(for: panelPosition)
 
@@ -136,34 +155,53 @@ struct HomeView: View {
                 VelvetMapBackground(
                     selectedLocation: selectedLocation,
                     isConnected: connectionState == .connected,
+                    isInteractive: route == .home,
+                    autoRotates: route == .onboarding,
+                    includesBottomContrast: route == .home,
                     onPickCoordinate: selectNearestServer
                 )
+                .animation(nil, value: panelPosition)
 
                 VStack(spacing: 0) {
                     header
 
                     Spacer()
 
-                    connectionSummary
-                        .padding(.bottom, summaryPadding)
+                    if route == .home {
+                        connectionSummary
+                            .padding(.bottom, summaryPadding)
+                            .animation(VelvetMotion.easeOut(duration: 0.25), value: panelPosition)
+                            .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
+                    }
+                }
+                .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
+
+                if route == .home {
+                    panel(safeAreaBottom, safeAreaTop, detents)
+                        .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
                 }
 
-                panel(safeAreaBottom, detents)
+                if route == .onboarding {
+                    onboardingOverlay(safeAreaBottom: safeAreaBottom)
+                        .transition(VelvetMotion.onboardingContent(reduceMotion: reduceMotion))
+                }
             }
+            .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
             .ignoresSafeArea(edges: .bottom)
-            .animation(.easeOut(duration: 0.25), value: panelPosition)
         }
     }
 
     private func detents(
         screenHeight: CGFloat,
-        safeAreaBottom: CGFloat
+        safeAreaBottom: CGFloat,
+        safeAreaTop: CGFloat
     ) -> BottomPanelDetents {
         switch panelStyle {
         case .island:
             .makeIsland(
                 screenHeight: screenHeight,
                 safeAreaBottom: safeAreaBottom,
+                safeAreaTop: safeAreaTop,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             )
         case .sheet:
@@ -218,32 +256,51 @@ struct HomeView: View {
 
             Spacer()
 
-            Button {
-                route = .onboarding
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
-                    .background(.regularMaterial, in: Circle())
-            }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel("Add VPN configuration")
+            if route == .home {
+                Button {
+                    withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+                        route = .onboarding
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(PressScaleButtonStyle())
+                .accessibilityLabel("Add VPN configuration")
+                .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
 
-            Button {
-                showsSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
-                    .background(.regularMaterial, in: Circle())
+                Button {
+                    showsSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(PressScaleButtonStyle())
+                .accessibilityLabel("Settings")
+                .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
             }
-            .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
+        .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
+    }
+
+    private func onboardingOverlay(safeAreaBottom: CGFloat) -> some View {
+        ConnectVPNView(route: $route)
+            .padding(.horizontal, VelvetTheme.horizontalPadding)
+            .padding(.top, 20)
+            .padding(.bottom, max(safeAreaBottom, VelvetTheme.minimumBottomMargin))
+            .frame(maxWidth: .infinity)
+            .background {
+                OnboardingContentBackdrop()
+            }
+            .keyboardLift()
     }
 
     private var connectionSummary: some View {
@@ -260,7 +317,7 @@ struct HomeView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .animation(.easeOut(duration: 0.2), value: connectionState)
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
         .accessibilityElement(children: .combine)
     }
 }

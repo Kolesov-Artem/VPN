@@ -28,6 +28,11 @@ struct BottomPanelDetents {
     /// Clearance the island keeps from the screen edge so it never sits under
     /// the home indicator, per Apple's layout guidance.
     let bottomMargin: CGFloat
+    /// Status bar / Dynamic Island clearance for the full-screen sheet.
+    let topMargin: CGFloat
+
+    /// Height of the fixed drag-indicator band at the top of the expanded sheet.
+    static let expandedGripBandHeight: CGFloat = 8 + 5 + 6
 
     func height(for position: BottomPanelPosition) -> CGFloat {
         switch position {
@@ -59,30 +64,39 @@ struct BottomPanelDetents {
             expandedHeight: expandedHeight,
             intermediateHeight: intermediateHeight,
             islandHeight: islandHeight,
-            bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
+            bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin),
+            topMargin: 0
         )
     }
 
-    /// Heights for the hand-built floating island, which stops short of the top
-    /// of the screen because it never becomes a full-screen sheet.
+    /// Heights for the hand-built floating island. Like Find My, it grows from a
+    /// small inset card through a half-height detent to a full-screen sheet.
     static func makeIsland(
         screenHeight: CGFloat,
         safeAreaBottom: CGFloat,
+        safeAreaTop: CGFloat,
         isAccessibilitySize: Bool
     ) -> BottomPanelDetents {
-        let expandedHeight = screenHeight * (isAccessibilitySize ? 0.78 : 0.68)
+        let topMargin = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
+        let expandedHeight = screenHeight - topMargin
+        let intermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.50)
         let islandHeight: CGFloat = isAccessibilitySize ? 210 : 154
 
         return BottomPanelDetents(
             expandedHeight: expandedHeight,
-            intermediateHeight: expandedHeight,
+            intermediateHeight: intermediateHeight,
             islandHeight: islandHeight,
-            bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
+            bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin),
+            topMargin: topMargin
         )
     }
 
     func summaryBottomPadding(for position: BottomPanelPosition) -> CGFloat {
-        let bottomGap = position == .island ? bottomMargin : 0
+        let bottomGap: CGFloat = switch position {
+        case .island: bottomMargin
+        case .intermediate: VelvetTheme.islandHalfMargin
+        case .expanded: 0
+        }
         return height(for: position) + bottomGap + 24
     }
 }
@@ -92,7 +106,10 @@ struct BottomPanelVisualState {
     let horizontalInset: CGFloat
     let bottomInset: CGFloat
     let bottomCornerRadius: CGFloat
-    let expansionProgress: CGFloat
+    /// Island → intermediate: list reveal and bottom margin clearance.
+    let revealProgress: CGFloat
+    /// Intermediate → expanded: edge-to-edge sheet morph.
+    let sheetMorphProgress: CGFloat
     let collapsedContentOpacity: CGFloat
     let listProgress: CGFloat
     let shadowOpacity: CGFloat
@@ -102,6 +119,9 @@ struct BottomPanelVisualState {
 
 /// Drives the floating island: it interpolates every visual property from the
 /// live drag so the panel tracks the finger instead of snapping between states.
+/// Content reveal (list vs connect) finishes by the intermediate detent; card
+/// morph (insets, corners, shadow) runs across the full island-to-expanded range,
+/// matching Find My's half-height list and full-screen sheet.
 enum BottomPanelInterpolator {
     static func layout(
         detents: BottomPanelDetents,
@@ -115,30 +135,47 @@ enum BottomPanelInterpolator {
             lowerBound: detents.islandHeight,
             upperBound: detents.expandedHeight
         )
-        let range = max(detents.expandedHeight - detents.islandHeight, 1)
-        let progress = clamp(
-            (effectiveHeight - detents.islandHeight) / range,
+
+        let revealRange = max(detents.intermediateHeight - detents.islandHeight, 1)
+        let revealProgress = clamp(
+            (effectiveHeight - detents.islandHeight) / revealRange,
             lower: 0,
             upper: 1
         )
-        let collapsedOpacity = 1 - smoothStep(progress, from: 0.08, to: 0.36)
-        let listProgress = smoothStep(progress, from: 0.18, to: 0.92)
+
+        let sheetMorphRange = max(detents.expandedHeight - detents.intermediateHeight, 1)
+        let sheetMorphProgress = clamp(
+            (effectiveHeight - detents.intermediateHeight) / sheetMorphRange,
+            lower: 0,
+            upper: 1
+        )
+
+        let collapsedOpacity = 1 - smoothStep(revealProgress, from: 0.08, to: 0.82)
+        let listProgress = smoothStep(revealProgress, from: 0.12, to: 0.88)
+
+        let floatingHorizontalInset =
+            VelvetTheme.islandHorizontalInset
+            + (VelvetTheme.islandHalfMargin - VelvetTheme.islandHorizontalInset) * revealProgress
+        let floatingBottomInset =
+            detents.bottomMargin
+            + (VelvetTheme.islandHalfMargin - detents.bottomMargin) * revealProgress
 
         let islandShadow = VelvetTheme.islandShadowOpacity
         let expandedShadow = VelvetTheme.expandedShadowOpacity
-        let shadowOpacity = islandShadow + (expandedShadow - islandShadow) * progress
+        let shadowOpacity = islandShadow + (expandedShadow - islandShadow) * sheetMorphProgress
 
         return BottomPanelVisualState(
             panelHeight: effectiveHeight,
-            horizontalInset: VelvetTheme.islandHorizontalInset * (1 - progress),
-            bottomInset: detents.bottomMargin * (1 - progress),
-            bottomCornerRadius: VelvetTheme.panelRadius * (1 - progress),
-            expansionProgress: progress,
+            horizontalInset: floatingHorizontalInset * (1 - sheetMorphProgress),
+            bottomInset: floatingBottomInset * (1 - sheetMorphProgress),
+            bottomCornerRadius: VelvetTheme.panelRadius * (1 - sheetMorphProgress),
+            revealProgress: revealProgress,
+            sheetMorphProgress: sheetMorphProgress,
             collapsedContentOpacity: collapsedOpacity,
             listProgress: listProgress,
             shadowOpacity: shadowOpacity,
-            shadowRadius: 20 + 4 * progress,
-            shadowY: -4 - 4 * progress
+            shadowRadius: 20 + 4 * sheetMorphProgress,
+            shadowY: -4 - 4 * sheetMorphProgress
         )
     }
 
@@ -196,10 +233,14 @@ struct BottomPanelSnapResolver {
             return current
         }
 
-        let currentHeight = detents.height(for: current)
-        let targetHeight = currentHeight - projectedTranslation
-        let midpoint = (detents.islandHeight + detents.expandedHeight) / 2
+        if projectedTranslation <= -threshold {
+            return current.nextHigher
+        }
 
-        return targetHeight >= midpoint ? .expanded : .island
+        if projectedTranslation >= threshold {
+            return current.nextLower
+        }
+
+        return current
     }
 }

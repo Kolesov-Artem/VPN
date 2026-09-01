@@ -1,5 +1,15 @@
 import SwiftUI
 
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
+    }
+}
+
 /// The hand-built floating island: it keeps its own drag gesture and height
 /// interpolation, so it can sit inset from the screen edges the way a system
 /// sheet never can. Scrolling stays inside the location list.
@@ -7,13 +17,22 @@ struct VPNIslandPanel: View {
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
+    @Binding var isPanelInteracting: Bool
     let safeAreaBottom: CGFloat
+    let safeAreaTop: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    @GestureState private var dragTranslation: CGFloat = 0
+    @State private var dragTranslation: CGFloat = 0
+    @State private var scrollChromeMinY: CGFloat?
+    @State private var scrollRestMinY: CGFloat?
+    @State private var scrollEdgeProgress: CGFloat = 0
+    @State private var isScrollAtTop = true
+    @State private var isDraggingPanel = false
+    @State private var isCollapsingFromScroll = false
+    @State private var isPositionAnimating = false
     @FocusState private var searchIsFocused: Bool
     @State private var query = VPNLocationQuery()
     @State private var showsDeleteConfirmation = false
@@ -21,8 +40,9 @@ struct VPNIslandPanel: View {
     var body: some View {
         GeometryReader { proxy in
             let detents = BottomPanelDetents.makeIsland(
-                screenHeight: proxy.size.height,
+                screenHeight: proxy.size.height + safeAreaBottom,
                 safeAreaBottom: safeAreaBottom,
+                safeAreaTop: safeAreaTop,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             )
             let layout = BottomPanelInterpolator.layout(
@@ -30,68 +50,36 @@ struct VPNIslandPanel: View {
                 position: position,
                 dragTranslation: dragTranslation
             )
+            let panelInteracting = isDraggingPanel || isCollapsingFromScroll || isPositionAnimating
+            let expandedTopInset = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
 
-            VStack(spacing: 0) {
-                panelChrome
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        panelDragGesture(detents: detents),
-                        including: position == .island ? .subviews : .all
+            Color.clear
+                .allowsHitTesting(false)
+                .overlay(alignment: .bottom) {
+                    panelCard(
+                        detents: detents,
+                        layout: layout,
+                        expandedTopInset: expandedTopInset
                     )
-
-                ZStack(alignment: .top) {
-                    connectionButton
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .opacity(layout.collapsedContentOpacity)
-                        .offset(y: 18 * layout.expansionProgress)
-                        .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
-
-                    expandedContent(detents: detents, progress: layout.listProgress)
-                        .opacity(layout.listProgress)
-                        .offset(y: 28 * (1 - layout.listProgress))
-                        .allowsHitTesting(layout.listProgress > 0.5)
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
-                .clipped()
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: layout.panelHeight, alignment: .top)
-            .background {
-                if reduceTransparency {
-                    Color(.systemBackground)
-                } else {
-                    Rectangle().fill(.ultraThickMaterial)
+                .onChange(of: panelInteracting) { _, interacting in
+                    isPanelInteracting = interacting
                 }
-            }
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: VelvetTheme.panelRadius,
-                    bottomLeadingRadius: layout.bottomCornerRadius,
-                    bottomTrailingRadius: layout.bottomCornerRadius,
-                    topTrailingRadius: VelvetTheme.panelRadius
-                )
-            )
-            .shadow(
-                color: .black.opacity(layout.shadowOpacity),
-                radius: layout.shadowRadius,
-                y: layout.shadowY
-            )
-            .padding(.horizontal, layout.horizontalInset)
-            .padding(.bottom, layout.bottomInset)
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .simultaneousGesture(
-                panelDragGesture(detents: detents),
-                including: position == .island ? .all : .subviews
-            )
-            .animation(panelAnimation, value: position)
+                .onAppear {
+                    isPanelInteracting = panelInteracting
+                }
         }
         .sensoryFeedback(.selection, trigger: position)
         .onChange(of: position) { _, newValue in
-            guard newValue == .island else { return }
-            searchIsFocused = false
-            query.text = ""
+            if newValue == .island {
+                searchIsFocused = false
+                query.text = ""
+            }
+            if newValue != .expanded {
+                isScrollAtTop = true
+                scrollEdgeProgress = 0
+                isCollapsingFromScroll = false
+            }
         }
         .confirmationDialog(
             "Delete this configuration?",
@@ -107,22 +95,206 @@ struct VPNIslandPanel: View {
         }
     }
 
-    private var panelChrome: some View {
-        VStack(spacing: 0) {
-            dragHandle
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-
-            panelHeader
+    @ViewBuilder
+    private var panelBackground: some View {
+        if reduceTransparency {
+            Color(.systemBackground)
+        } else {
+            Rectangle().fill(.regularMaterial)
         }
     }
 
-    private var dragHandle: some View {
+    private func panelShape(layout: BottomPanelVisualState) -> some Shape {
+        UnevenRoundedRectangle(
+            topLeadingRadius: VelvetTheme.panelRadius,
+            bottomLeadingRadius: layout.bottomCornerRadius,
+            bottomTrailingRadius: layout.bottomCornerRadius,
+            topTrailingRadius: VelvetTheme.panelRadius
+        )
+    }
+
+    private func panelCard(
+        detents: BottomPanelDetents,
+        layout: BottomPanelVisualState,
+        expandedTopInset: CGFloat
+    ) -> some View {
+        let shape = panelShape(layout: layout)
+
+        return VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                locationsScrollBody(
+                    detents: detents,
+                    layout: layout
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                connectionButton
+                    .padding(.horizontal, 16)
+                    .padding(.top, panelChromeHeight + 16)
+                    .opacity(layout.collapsedContentOpacity)
+                    .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .clipped()
+        }
+        .frame(height: layout.panelHeight, alignment: .top)
+        .frame(maxWidth: .infinity)
+        .background {
+            panelBackground
+        }
+        .clipShape(shape)
+        .shadow(
+            color: .black.opacity(layout.shadowOpacity),
+            radius: layout.shadowRadius,
+            y: layout.shadowY
+        )
+        .padding(.top, expandedTopInset * layout.sheetMorphProgress)
+        .padding(.horizontal, layout.horizontalInset)
+        .padding(.bottom, layout.bottomInset)
+        .contentShape(Rectangle())
+        .gesture(
+            panelResizeGesture(detents: detents),
+            including: position != .expanded ? .all : .subviews
+        )
+    }
+
+    private var panelChromeHeight: CGFloat {
+        BottomPanelDetents.expandedGripBandHeight + 44
+    }
+
+    /// One pinned bar is shared by every detent. On iOS 26 `safeAreaBar`
+    /// registers it with the system scroll-edge renderer.
+    private func panelTopBar(detents: BottomPanelDetents) -> some View {
+        VStack(spacing: 0) {
+            systemDragIndicator
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+                .frame(maxWidth: .infinity)
+                .frame(height: BottomPanelDetents.expandedGripBandHeight)
+                .contentShape(Rectangle())
+                .gesture(
+                    sheetCollapseGesture(detents: detents),
+                    including: isScrollAtTop ? .all : .subviews
+                )
+
+            ZStack {
+                panelHeader
+                    .opacity(1 - scrollEdgeProgress)
+                    .allowsHitTesting(scrollEdgeProgress < 0.5)
+
+                ExpandedSheetCompactBar(
+                    scrollEdgeProgress: scrollEdgeProgress,
+                    onCollapse: collapseExpandedPanel
+                )
+            }
+            .frame(height: 44)
+        }
+    }
+
+    /// Single scroll container for island, intermediate, and expanded so the
+    /// list never remounts when snapping between detents.
+    private func locationsScrollBody(
+        detents: BottomPanelDetents,
+        layout: BottomPanelVisualState
+    ) -> some View {
+        let isExpanded = position == .expanded
+        let canScroll = isExpanded && !isPositionAnimating && !isCollapsingFromScroll
+
+        return ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    scrollTopAnchor
+                        .background {
+                            scrollChromeTracker
+                        }
+
+                    floatingListContent(
+                        detents: detents,
+                        progress: 1,
+                        animateRows: false,
+                        embedListInScrollView: false
+                    )
+                    .opacity(layout.listProgress)
+                    .allowsHitTesting(layout.listProgress > 0.5)
+                    .padding(.top, 12)
+                }
+                .padding(.bottom, detents.contentBottomInset)
+                .animation(nil, value: dragTranslation)
+            }
+            .panelScrollEdgeBar(scrollEdgeProgress: scrollEdgeProgress) {
+                panelTopBar(detents: detents)
+            }
+            .coordinateSpace(name: "islandScroll")
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { minY in
+                updateScrollAtTop(chromeMinY: minY)
+            }
+            // Enabling UIScrollView while the detent spring is still running
+            // makes it recalculate its content geometry mid-transition.
+            .scrollDisabled(!canScroll)
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(
+                sheetCollapseGesture(detents: detents),
+                including: isExpanded && isScrollAtTop ? .all : .subviews
+            )
+            .onChange(of: position) { _, newValue in
+                isScrollAtTop = true
+                scrollEdgeProgress = 0
+                guard newValue != .expanded else { return }
+                scrollChromeMinY = nil
+                scrollProxy.scrollTo("scrollTop", anchor: .top)
+            }
+        }
+    }
+
+    private var scrollTopAnchor: some View {
+        Color.clear
+            .frame(height: 1)
+            .id("scrollTop")
+    }
+
+    private var scrollChromeTracker: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .preference(
+                    key: ScrollOffsetPreferenceKey.self,
+                    value: geometry.frame(in: .named("islandScroll")).minY
+                )
+        }
+        .frame(height: 0)
+    }
+
+    private func updateScrollAtTop(chromeMinY: CGFloat?) {
+        guard let chromeMinY else { return }
+
+        if scrollRestMinY == nil {
+            scrollRestMinY = chromeMinY
+        }
+
+        let restMinY = scrollRestMinY ?? chromeMinY
+        let scrollOffset = restMinY - chromeMinY
+        let newAtTop = scrollOffset <= 1
+        let newProgress = min(max(scrollOffset / 28, 0), 1)
+
+        if let previous = scrollChromeMinY,
+           abs(previous - chromeMinY) < 0.5,
+           newAtTop == isScrollAtTop,
+           abs(newProgress - scrollEdgeProgress) < 0.02 {
+            return
+        }
+
+        scrollChromeMinY = chromeMinY
+        isScrollAtTop = newAtTop
+        scrollEdgeProgress = newProgress
+    }
+
+    /// Capsule drag indicator matching the system sheet presentation style.
+    private var systemDragIndicator: some View {
         Capsule()
             .fill(Color.secondary.opacity(0.42))
             .frame(width: 36, height: 5)
             .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
+            .accessibilityLabel("Drag to resize panel")
     }
 
     private var panelHeader: some View {
@@ -161,6 +333,7 @@ struct VPNIslandPanel: View {
             .accessibilityLabel(position == .island ? "Expand panel" : "Collapse panel")
         }
         .padding(.horizontal, 16)
+        .padding(.bottom, 4)
     }
 
     private var moreMenu: some View {
@@ -244,51 +417,83 @@ struct VPNIslandPanel: View {
         )
     }
 
-    private func expandedContent(detents: BottomPanelDetents, progress: CGFloat) -> some View {
+    private func floatingListContent(
+        detents: BottomPanelDetents,
+        progress: CGFloat,
+        animateRows: Bool,
+        embedListInScrollView: Bool
+    ) -> some View {
         VStack(spacing: 10) {
             searchRow
 
-            if !query.isDefault {
+            if !query.isDefault && !isDraggingPanel {
                 activeFilterChips
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(VelvetMotion.filterChip(reduceMotion: reduceMotion))
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    let smartResults = results.filter { $0.kind == .smart }
-                    let otherResults = results.filter { $0.kind != .smart }
-
-                    if results.isEmpty {
-                        emptyState
-                    } else {
-                        if !smartResults.isEmpty {
-                            locationSection(
-                                title: "Recommended",
-                                locations: smartResults,
-                                startIndex: 0,
-                                progress: progress
-                            )
-                        }
-
-                        if !otherResults.isEmpty {
-                            locationSection(
-                                title: listSectionTitle,
-                                locations: otherResults,
-                                startIndex: smartResults.count,
-                                progress: progress
-                            )
-                        }
-                    }
+            if embedListInScrollView {
+                ScrollView {
+                    locationListContent(
+                        detents: detents,
+                        progress: progress,
+                        animateRows: animateRows,
+                        usesNestedScroll: true
+                    )
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
-                .padding(.bottom, detents.contentBottomInset)
+                .scrollDisabled(true)
+                .scrollIndicators(.hidden)
+            } else {
+                locationListContent(
+                    detents: detents,
+                    progress: progress,
+                    animateRows: animateRows,
+                    usesNestedScroll: false
+                )
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
         }
-        .padding(.top, 12)
-        .animation(.easeOut(duration: 0.2), value: query)
+        .animation(
+            isDraggingPanel ? nil : VelvetMotion.queryChange(reduceMotion: reduceMotion),
+            value: query
+        )
+    }
+
+    private func locationListContent(
+        detents: BottomPanelDetents,
+        progress: CGFloat,
+        animateRows: Bool,
+        usesNestedScroll: Bool
+    ) -> some View {
+        LazyVStack(alignment: .leading, spacing: 18) {
+            let smartResults = results.filter { $0.kind == .smart }
+            let otherResults = results.filter { $0.kind != .smart }
+
+            if results.isEmpty {
+                emptyState
+            } else {
+                if !smartResults.isEmpty {
+                    locationSection(
+                        title: "Recommended",
+                        locations: smartResults,
+                        startIndex: 0,
+                        progress: progress,
+                        animateRows: animateRows
+                    )
+                }
+
+                if !otherResults.isEmpty {
+                    locationSection(
+                        title: listSectionTitle,
+                        locations: otherResults,
+                        startIndex: smartResults.count,
+                        progress: progress,
+                        animateRows: animateRows
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, usesNestedScroll ? detents.contentBottomInset : 0)
     }
 
     /// Search and filtering share a single row: the field stretches, and every
@@ -420,7 +625,8 @@ struct VPNIslandPanel: View {
         title: String,
         locations: [VPNLocation],
         startIndex: Int,
-        progress: CGFloat
+        progress: CGFloat,
+        animateRows: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -435,7 +641,9 @@ struct VPNIslandPanel: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(locations.enumerated()), id: \.element.id) { offset, location in
-                    let appearance = rowProgress(progress, index: startIndex + offset)
+                    let appearance = animateRows
+                        ? VelvetMotion.rowProgress(progress, index: startIndex + offset)
+                        : 1
 
                     Button {
                         selectLocation(location)
@@ -444,7 +652,7 @@ struct VPNIslandPanel: View {
                     }
                     .buttonStyle(.plain)
                     .opacity(appearance)
-                    .offset(y: 20 * (1 - appearance))
+                    .offset(y: animateRows ? 20 * (1 - appearance) : 0)
 
                     if offset < locations.count - 1 {
                         Divider()
@@ -533,58 +741,137 @@ struct VPNIslandPanel: View {
         }
     }
 
-    private func panelDragGesture(detents: BottomPanelDetents) -> some Gesture {
+    private func sheetCollapseGesture(detents: BottomPanelDetents) -> some Gesture {
         DragGesture(minimumDistance: 8)
-            .updating($dragTranslation) { value, state, _ in
-                state = value.translation.height
+            .onChanged { value in
+                guard position == .expanded, isScrollContentAtTop else { return }
+                guard value.translation.height > 4 else { return }
+                guard value.translation.height > abs(value.translation.width) else { return }
+
+                isCollapsingFromScroll = true
+                isDraggingPanel = true
+                dragTranslation = value.translation.height
             }
             .onEnded { value in
-                let target = BottomPanelSnapResolver.resolve(
-                    current: position,
-                    translation: value.translation.height,
-                    predictedEndTranslation: value.predictedEndTranslation.height,
-                    detents: detents
-                )
-                withAnimation(panelAnimation) {
-                    position = target
+                guard position == .expanded, isCollapsingFromScroll else {
+                    isCollapsingFromScroll = false
+                    isDraggingPanel = false
+                    return
                 }
+
+                guard isScrollContentAtTop else {
+                    isCollapsingFromScroll = false
+                    isDraggingPanel = false
+                    dragTranslation = 0
+                    return
+                }
+
+                snapPanel(
+                    detents: detents,
+                    translation: value.translation.height,
+                    predictedEndTranslation: value.predictedEndTranslation.height
+                )
+                isCollapsingFromScroll = false
             }
     }
 
-    private var panelAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.2)
-            : .spring(response: 0.42, dampingFraction: 0.78, blendDuration: 0.12)
+    private var isScrollContentAtTop: Bool {
+        guard let chromeMinY = scrollChromeMinY else { return isScrollAtTop }
+        guard let scrollRestMinY else { return isScrollAtTop }
+        return chromeMinY >= scrollRestMinY - 1
+    }
+
+    private func panelResizeGesture(detents: BottomPanelDetents) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                guard position != .expanded else { return }
+                isDraggingPanel = true
+                dragTranslation = value.translation.height
+            }
+            .onEnded { value in
+                guard position != .expanded else {
+                    isDraggingPanel = false
+                    return
+                }
+                snapPanel(
+                    detents: detents,
+                    translation: value.translation.height,
+                    predictedEndTranslation: value.predictedEndTranslation.height
+                )
+            }
+    }
+
+    private func snapPanel(
+        detents: BottomPanelDetents,
+        translation: CGFloat,
+        predictedEndTranslation: CGFloat
+    ) {
+        let target = BottomPanelSnapResolver.resolve(
+            current: position,
+            translation: translation,
+            predictedEndTranslation: predictedEndTranslation,
+            detents: detents
+        )
+        isDraggingPanel = false
+        isCollapsingFromScroll = false
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = target
+            dragTranslation = 0
+        }
+        schedulePositionAnimationEnd()
+    }
+
+    private func schedulePositionAnimationEnd() {
+        let delay = VelvetMotion.panelSettleDelay(reduceMotion: reduceMotion)
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            isPositionAnimating = false
+        }
+    }
+
+    private func collapseExpandedPanel() {
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = .intermediate
+            dragTranslation = 0
+            isScrollAtTop = true
+            isCollapsingFromScroll = false
+            isDraggingPanel = false
+        }
+        schedulePositionAnimationEnd()
     }
 
     private func togglePosition() {
-        withAnimation(panelAnimation) {
-            position = position == .island ? .expanded : .island
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            switch position {
+            case .island:
+                position = .intermediate
+            case .intermediate:
+                position = .expanded
+            case .expanded:
+                position = .island
+            }
+            dragTranslation = 0
         }
+        schedulePositionAnimationEnd()
     }
 
     private func selectLocation(_ location: VPNLocation) {
         selectedLocation = location
         searchIsFocused = false
 
-        withAnimation(panelAnimation) {
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
             position = .island
+            dragTranslation = 0
         }
-    }
-
-    /// Staggers rows so they fade and slide in as the sheet is pulled open.
-    /// The delay stops accumulating past the first screenful, otherwise the
-    /// lower rows would never finish their transition.
-    private func rowProgress(_ progress: CGFloat, index: Int) -> CGFloat {
-        let delay = CGFloat(min(index, 7)) * 0.05
-        let start = 0.08 + delay
-        let end = min(start + 0.5, 1)
-        let value = min(max((progress - start) / max(end - start, 0.001), 0), 1)
-        return value * value * (3 - 2 * value)
+        schedulePositionAnimationEnd()
     }
 
     private func handleConnectionTap() {
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
             connectionState.handlePrimaryAction()
         }
 
@@ -592,7 +879,7 @@ struct VPNIslandPanel: View {
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
             }
         }

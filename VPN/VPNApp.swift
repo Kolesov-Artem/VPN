@@ -11,7 +11,6 @@ struct VPNApp: App {
 }
 
 private struct RootView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var route: AppRoute
 
     init() {
@@ -25,35 +24,6 @@ private struct RootView: View {
     }
 
     var body: some View {
-        ZStack {
-            switch route {
-            case .onboarding:
-                ConnectVPNView(route: routeBinding)
-                    .transition(rootTransition)
-            case .home:
-                HomeView(route: routeBinding)
-                    .transition(rootTransition)
-            }
-        }
-        .animation(
-            reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.28),
-            value: route
-        )
-    }
-
-    private var routeBinding: Binding<AppRoute> {
-        Binding(
-            get: { route },
-            set: { route = $0 }
-        )
-    }
-
-    private var rootTransition: AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .asymmetric(
-                insertion: .opacity.combined(with: .move(edge: .trailing)),
-                removal: .opacity.combined(with: .move(edge: .leading))
-            )
+        HomeView(route: $route)
     }
 }
