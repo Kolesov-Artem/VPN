@@ -159,11 +159,11 @@ struct VPNBottomPanel: View {
             handleConnectionTap()
         } label: {
             HStack {
-                if connectionState == .connecting {
+                if connectionState.isConnecting {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Image(systemName: connectionState == .connected ? "checkmark.shield.fill" : "power")
+                    Image(systemName: connectionState.isConnected ? "checkmark.shield.fill" : "power")
                 }
                 Text(connectionButtonTitle)
                     .fontWeight(.semibold)
@@ -173,10 +173,10 @@ struct VPNBottomPanel: View {
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
-        .disabled(connectionState == .connecting)
+        .tint(connectionState.isConnected ? Color.green : VelvetTheme.accent)
+        .disabled(connectionState.isConnecting)
         .accessibilityHint(
-            connectionState == .connected
+            connectionState.isConnected
                 ? "Disconnects the demo VPN"
                 : "Connects the demo VPN"
         )
@@ -714,7 +714,7 @@ struct VPNBottomPanel: View {
     private var connectionButtonTitle: String {
         switch connectionState {
         case .disconnected: "Connect"
-        case .connecting: "Connecting…"
+        case .connecting: "Finding route…"
         case .connected: "Connected"
         }
     }
@@ -738,17 +738,33 @@ struct VPNBottomPanel: View {
         }
     }
 
+    private let orchestrator = RouteOrchestrator()
+
     private func handleConnectionTap() {
         withAnimation(.easeOut(duration: 0.18)) {
             connectionState.handlePrimaryAction()
         }
 
-        guard connectionState == .connecting else { return }
+        guard connectionState.isConnecting else { return }
+
+        let target: ConnectionTarget = selectedLocation.isSmart
+            ? .smart
+            : .location(selectedLocation)
 
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.easeOut(duration: 0.2)) {
-                connectionState.completeConnection()
+            do {
+                let result = try await orchestrator.race(for: target) { progress in
+                    connectionState.updateRaceProgress(progress)
+                }
+
+                withAnimation(.easeOut(duration: 0.2)) {
+                    connectionState.completeConnection(
+                        route: result.winner,
+                        alternates: result.alternates
+                    )
+                }
+            } catch {
+                connectionState = .disconnected
             }
         }
     }

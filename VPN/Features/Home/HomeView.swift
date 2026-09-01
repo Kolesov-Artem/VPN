@@ -25,6 +25,7 @@ struct HomeView: View {
     @State private var panelPosition = BottomPanelPosition.island
     @State private var connectionState = VPNConnectionState.disconnected
     @State private var selectedLocation = VPNLocation.samples[0]
+    @State private var providers = VPNNetworkCatalog.providers
     @State private var showsSettings = false
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
 
@@ -71,6 +72,7 @@ struct HomeView: View {
                 position: $panelPosition,
                 connectionState: $connectionState,
                 selectedLocation: $selectedLocation,
+                providers: $providers,
                 safeAreaBottom: safeAreaBottom
             )
         }
@@ -134,8 +136,8 @@ struct HomeView: View {
 
             ZStack(alignment: .bottom) {
                 VelvetMapBackground(
-                    selectedLocation: selectedLocation,
-                    isConnected: connectionState == .connected,
+                    selectedLocation: connectionState.activeRoute?.location ?? selectedLocation,
+                    isConnected: connectionState.isConnected,
                     onPickCoordinate: selectNearestServer
                 )
 
@@ -248,20 +250,60 @@ struct HomeView: View {
 
     private var connectionSummary: some View {
         VStack(spacing: 12) {
-            Image(systemName: connectionState == .connected ? "lock.shield.fill" : "shield")
+            Image(systemName: summarySymbol)
                 .font(.system(size: 48, weight: .medium))
-                .foregroundStyle(connectionState == .connected ? Color.green : Color.primary.opacity(0.72))
+                .foregroundStyle(summarySymbolColor)
                 .contentTransition(.symbolEffect(.replace))
 
-            Text(connectionState == .connected ? "Protected" : "Ready to connect")
+            Text(summaryTitle)
                 .font(.title3.weight(.semibold))
 
-            Label(selectedLocation.name, systemImage: "location.fill")
+            Label(summaryLocationLabel, systemImage: "location.fill")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            if connectionState.isConnecting {
+                Text("Finding route…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let route = connectionState.activeRoute {
+                Text(route.summaryLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if selectedLocation.isSmart {
+                Text("Smart · Auto")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .animation(.easeOut(duration: 0.2), value: connectionState)
         .accessibilityElement(children: .combine)
+    }
+
+    private var summarySymbol: String {
+        if connectionState.isConnected { return "lock.shield.fill" }
+        if connectionState.isConnecting { return "shield.lefthalf.filled" }
+        return "shield"
+    }
+
+    private var summarySymbolColor: Color {
+        if connectionState.isConnected { return .green }
+        return .primary.opacity(0.72)
+    }
+
+    private var summaryTitle: String {
+        switch connectionState {
+        case .disconnected: "Ready to connect"
+        case .connecting: "Connecting"
+        case .connected: "Protected"
+        }
+    }
+
+    private var summaryLocationLabel: String {
+        if let route = connectionState.activeRoute {
+            return route.location.name
+        }
+        return selectedLocation.isSmart ? "Smart · Auto" : selectedLocation.name
     }
 }
 

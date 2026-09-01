@@ -8,13 +8,38 @@ enum AppRoute {
 
 enum VPNConnectionState: Equatable {
     case disconnected
-    case connecting
-    case connected
+    case connecting(race: RouteRaceProgress?)
+    case connected(route: ActiveRoute, alternates: [RouteCandidate])
+
+    var isConnecting: Bool {
+        if case .connecting = self { return true }
+        return false
+    }
+
+    var isConnected: Bool {
+        if case .connected = self { return true }
+        return false
+    }
+
+    var activeRoute: ActiveRoute? {
+        if case .connected(let route, _) = self { return route }
+        return nil
+    }
+
+    var raceProgress: RouteRaceProgress? {
+        if case .connecting(let race) = self { return race }
+        return nil
+    }
+
+    var alternates: [RouteCandidate] {
+        if case .connected(_, let alternates) = self { return alternates }
+        return []
+    }
 
     mutating func handlePrimaryAction() {
         switch self {
         case .disconnected:
-            self = .connecting
+            self = .connecting(race: nil)
         case .connecting:
             break
         case .connected:
@@ -22,9 +47,14 @@ enum VPNConnectionState: Equatable {
         }
     }
 
-    mutating func completeConnection() {
-        guard self == .connecting else { return }
-        self = .connected
+    mutating func updateRaceProgress(_ progress: RouteRaceProgress) {
+        guard case .connecting = self else { return }
+        self = .connecting(race: progress)
+    }
+
+    mutating func completeConnection(route: ActiveRoute, alternates: [RouteCandidate]) {
+        guard case .connecting = self else { return }
+        self = .connected(route: route, alternates: alternates)
     }
 }
 
@@ -100,7 +130,18 @@ struct VPNLocation: Identifiable, Equatable {
     }
 
     var subtitle: String {
-        kind == .smart ? city : "\(city) · \(kind.title)"
+        if kind == .smart {
+            return "Auto · best of all networks"
+        }
+        return "\(city) · \(kind.title)"
+    }
+
+    var displayPing: Int {
+        VPNNetworkCatalog.bestPing(for: self)
+    }
+
+    var isSmart: Bool {
+        kind == .smart
     }
 
     var pingLabel: String {
@@ -108,7 +149,7 @@ struct VPNLocation: Identifiable, Equatable {
     }
 
     var signal: Signal {
-        switch ping {
+        switch displayPing {
         case ..<60: .excellent
         case ..<120: .good
         default: .fair
@@ -278,7 +319,7 @@ extension VPNLocation {
 
                 switch query.sort {
                 case .fastest:
-                    return lhs.ping < rhs.ping
+                    return lhs.displayPing < rhs.displayPing
                 case .country:
                     if lhs.name == rhs.name {
                         return lhs.city.localizedCompare(rhs.city) == .orderedAscending

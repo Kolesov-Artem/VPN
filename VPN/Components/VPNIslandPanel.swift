@@ -7,6 +7,7 @@ struct VPNIslandPanel: View {
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
+    @Binding var providers: [VPNProvider]
     let safeAreaBottom: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -17,6 +18,10 @@ struct VPNIslandPanel: View {
     @FocusState private var searchIsFocused: Bool
     @State private var query = VPNLocationQuery()
     @State private var showsDeleteConfirmation = false
+    @State private var showsNetworksSheet = false
+    @State private var showsRouteDetails = false
+
+    private let orchestrator = RouteOrchestrator()
 
     var body: some View {
         GeometryReader { proxy in
@@ -41,12 +46,26 @@ struct VPNIslandPanel: View {
                     )
 
                 ZStack(alignment: .top) {
-                    connectionButton
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .opacity(layout.collapsedContentOpacity)
-                        .offset(y: 18 * layout.expansionProgress)
-                        .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
+                    VStack(spacing: 10) {
+                        connectionButton
+
+                        if connectionState.isConnecting, let race = connectionState.raceProgress {
+                            raceProgressView(race)
+                        } else if connectionState.isConnected, let route = connectionState.activeRoute {
+                            routeSummaryButton(route)
+                        } else {
+                            connectFootnote
+                        }
+
+                        if !selectedLocation.isSmart {
+                            backToSmartButton
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .opacity(layout.collapsedContentOpacity)
+                    .offset(y: 18 * layout.expansionProgress)
+                    .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
 
                     expandedContent(detents: detents, progress: layout.listProgress)
                         .opacity(layout.listProgress)
@@ -105,6 +124,14 @@ struct VPNIslandPanel: View {
         } message: {
             Text("The prototype keeps the demo configuration, so nothing is removed.")
         }
+        .sheet(isPresented: $showsNetworksSheet) {
+            NetworksSheet(providers: $providers, onAddNetwork: {})
+        }
+        .sheet(isPresented: $showsRouteDetails) {
+            if let route = connectionState.activeRoute {
+                RouteDetailsSheet(activeRoute: route, alternates: connectionState.alternates)
+            }
+        }
     }
 
     private var panelChrome: some View {
@@ -138,9 +165,18 @@ struct VPNIslandPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Velvet VPN")
                     .font(.subheadline.weight(.semibold))
-                Text("99% traffic · 933 days")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                Button {
+                    showsNetworksSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(networksLabel)
+                        providerDots
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             .lineLimit(1)
             .truncationMode(.tail)
@@ -215,16 +251,94 @@ struct VPNIslandPanel: View {
             .background(Color(.tertiarySystemFill), in: Circle())
     }
 
+    private var networksLabel: String {
+        let activeCount = providers.filter(\.isEnabled).count
+        return "\(activeCount) network\(activeCount == 1 ? "" : "s") active"
+    }
+
+    private var providerDots: some View {
+        HStack(spacing: 3) {
+            ForEach(providers.filter(\.isEnabled).prefix(3)) { _ in
+                Circle()
+                    .fill(VelvetTheme.accent.opacity(0.85))
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var connectFootnote: some View {
+        Text(connectFootnoteText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+    }
+
+    private var connectFootnoteText: String {
+        let target: ConnectionTarget = selectedLocation.isSmart
+            ? .smart
+            : .location(selectedLocation)
+        let count = orchestrator.candidates(for: target, providers: providers).count
+
+        if selectedLocation.isSmart {
+            return "Auto · fastest of \(count) endpoints"
+        }
+        return "Best route from \(providers.filter(\.isEnabled).count) networks"
+    }
+
+    private var backToSmartButton: some View {
+        Button {
+            selectLocation(VPNLocation.samples[0])
+        } label: {
+            Label("Back to Smart", systemImage: "arrow.uturn.backward")
+                .font(.caption.weight(.medium))
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 12))
+    }
+
+    private func raceProgressView(_ progress: RouteRaceProgress) -> some View {
+        VStack(spacing: 6) {
+            Text(progress.label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ProgressView(value: progress.fraction)
+                .tint(VelvetTheme.accent)
+        }
+    }
+
+    private func routeSummaryButton(_ route: ActiveRoute) -> some View {
+        Button {
+            showsRouteDetails = true
+        } label: {
+            HStack(spacing: 6) {
+                Text(route.summaryLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Route details, \(route.summaryLine)")
+    }
+
     private var connectionButton: some View {
         Button {
             handleConnectionTap()
         } label: {
             HStack {
-                if connectionState == .connecting {
+                if connectionState.isConnecting {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Image(systemName: connectionState == .connected ? "checkmark.shield.fill" : "power")
+                    Image(systemName: connectionState.isConnected ? "checkmark.shield.fill" : "power")
                 }
                 Text(connectionButtonTitle)
                     .fontWeight(.semibold)
@@ -235,12 +349,12 @@ struct VPNIslandPanel: View {
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
-        .disabled(connectionState == .connecting)
+        .tint(connectionState.isConnected ? Color.green : VelvetTheme.accent)
+        .disabled(connectionState.isConnecting)
         .accessibilityHint(
-            connectionState == .connected
+            connectionState.isConnected
                 ? "Disconnects the demo VPN"
-                : "Connects the demo VPN"
+                : "Connects using the fastest available route"
         )
     }
 
@@ -492,7 +606,7 @@ struct VPNIslandPanel: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(location.name), \(location.subtitle), \(location.ping) milliseconds")
+        .accessibilityLabel("\(location.name), \(location.subtitle), \(location.displayPing) milliseconds")
         .accessibilityAddTraits(selectedLocation.id == location.id ? [.isSelected] : [])
     }
 
@@ -525,9 +639,11 @@ struct VPNIslandPanel: View {
     private var connectionButtonTitle: String {
         switch connectionState {
         case .disconnected:
-            "Connect"
+            selectedLocation.isSmart
+                ? "Connect"
+                : "Connect to \(selectedLocation.name)"
         case .connecting:
-            "Connecting…"
+            "Finding route…"
         case .connected:
             "Connected"
         }
@@ -588,12 +704,33 @@ struct VPNIslandPanel: View {
             connectionState.handlePrimaryAction()
         }
 
-        guard connectionState == .connecting else { return }
+        guard connectionState.isConnecting else { return }
+
+        let target: ConnectionTarget = selectedLocation.isSmart
+            ? .smart
+            : .location(selectedLocation)
 
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.easeOut(duration: 0.2)) {
-                connectionState.completeConnection()
+            do {
+                let result = try await orchestrator.race(for: target, providers: providers) { progress in
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        connectionState.updateRaceProgress(progress)
+                    }
+                }
+
+                withAnimation(.easeOut(duration: 0.2)) {
+                    connectionState.completeConnection(
+                        route: result.winner,
+                        alternates: result.alternates
+                    )
+                    if !selectedLocation.isSmart {
+                        selectedLocation = result.winner.location
+                    }
+                }
+            } catch {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    connectionState = .disconnected
+                }
             }
         }
     }

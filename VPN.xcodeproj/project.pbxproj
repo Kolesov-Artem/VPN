@@ -18,6 +18,9 @@
 		A1000000000000000000000C /* VPNIslandPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* VPNIslandPanel.swift */; };
 		A10000000000000000000007 /* BottomPanelStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* BottomPanelStateTests.swift */; };
 		A10000000000000000000008 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* XCTest.framework */; };
+        A1000000000000000000000D /* VPNProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* VPNProvider.swift */; };
+		A1000000000000000000000E /* MultiProviderSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* MultiProviderSheets.swift */; };
+		A1000000000000000000000F /* RouteOrchestratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* RouteOrchestratorTests.swift */; };
 		A10000000000000000000009 /* VPN.app in Embed App */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* VPN.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -57,6 +60,9 @@
 		B1000000000000000000000B /* BottomPanelLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelLayout.swift; sourceTree = "<group>"; };
 		B10000000000000000000007 /* BottomPanelStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomPanelStateTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+		B10000000000000000000010 /* RouteOrchestratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteOrchestratorTests.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* MultiProviderSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiProviderSheets.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* VPNProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPNProvider.swift; sourceTree = "<group>"; };
 		B10000000000000000000009 /* VPN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VPN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000000000000000000000A /* VPNTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VPNTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -107,6 +113,7 @@
 			children = (
 				B10000000000000000000002 /* AppState.swift */,
 				B1000000000000000000000B /* BottomPanelLayout.swift */,
+				B1000000000000000000000E /* VPNProvider.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -134,6 +141,7 @@
 			children = (
 				B10000000000000000000006 /* VPNBottomPanel.swift */,
 				B1000000000000000000000D /* VPNIslandPanel.swift */,
+				B1000000000000000000000F /* MultiProviderSheets.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -142,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000007 /* BottomPanelStateTests.swift */,
+				B10000000000000000000010 /* RouteOrchestratorTests.swift */,
 			);
 			path = VPNTests;
 			sourceTree = "<group>";
@@ -287,6 +296,8 @@
 				A1000000000000000000000A /* BottomPanelLayout.swift in Sources */,
 				A1000000000000000000000B /* VelvetMapBackground.swift in Sources */,
 				A1000000000000000000000C /* VPNIslandPanel.swift in Sources */,
+				A1000000000000000000000D /* VPNProvider.swift in Sources */,
+				A1000000000000000000000E /* MultiProviderSheets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -295,6 +306,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000007 /* BottomPanelStateTests.swift in Sources */,
+				A1000000000000000000000F /* RouteOrchestratorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

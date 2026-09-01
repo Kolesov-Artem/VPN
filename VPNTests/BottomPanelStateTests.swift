@@ -140,10 +140,16 @@ struct BottomPanelStateTests {
         var state = VPNConnectionState.disconnected
 
         state.handlePrimaryAction()
-        #expect(state == .connecting)
+        #expect(state.isConnecting)
 
-        state.completeConnection()
-        #expect(state == .connected)
+        let route = ActiveRoute(
+            provider: VPNNetworkCatalog.providers[0],
+            endpoint: VPNNetworkCatalog.endpoints[0],
+            location: VPNLocation.samples[0],
+            latency: 24
+        )
+        state.completeConnection(route: route, alternates: [])
+        #expect(state.isConnected)
 
         state.handlePrimaryAction()
         #expect(state == .disconnected)
