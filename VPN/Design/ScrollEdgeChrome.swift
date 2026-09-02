@@ -20,11 +20,7 @@ struct ExpandedSheetCompactBar: View {
             Button {
                 onCollapse()
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(.tertiarySystemFill), in: Circle())
+                VelvetIconButtonLabel(systemName: "chevron.down")
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel("Collapse panel")

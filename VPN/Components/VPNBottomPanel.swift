@@ -11,6 +11,7 @@ struct VPNBottomPanel: View {
     @Binding var selectedLocation: VPNLocation
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var searchIsFocused: Bool
     @AppStorage("velvet.favoriteLocations") private var storedFavouriteKeys = ""
 
@@ -88,7 +89,7 @@ struct VPNBottomPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .lineLimit(1)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
             Spacer(minLength: 4)
 
@@ -97,8 +98,10 @@ struct VPNBottomPanel: View {
             Button {
                 movePanelFromHeader()
             } label: {
-                headerIcon(position == .island ? "chevron.up" : "chevron.down")
-                    .contentTransition(.symbolEffect(.replace))
+                VelvetIconButtonLabel(
+                    systemName: position == .island ? "chevron.up" : "chevron.down"
+                )
+                .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel(position == .island ? "Expand panel" : "Collapse panel")
@@ -107,79 +110,13 @@ struct VPNBottomPanel: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            ControlGroup {
-                Button {} label: {
-                    Label("Info", systemImage: "info.circle")
-                }
-                Button {} label: {
-                    Label("Support", systemImage: "paperplane")
-                }
-            }
-            .controlGroupStyle(.compactMenu)
-
-            Section {
-                Button {} label: {
-                    Label("Routing", systemImage: "arrow.triangle.branch")
-                }
-                Button {} label: {
-                    Label("Update subscription", systemImage: "arrow.clockwise.circle")
-                }
-                Button {} label: {
-                    Label("Check ping", systemImage: "speedometer")
-                }
-                Button {} label: {
-                    Label("Edit", systemImage: "square.and.pencil")
-                }
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    showsDeleteConfirmation = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
-        } label: {
-            headerIcon("ellipsis")
+        VPNConfigOptionsMenu(showsDeleteConfirmation: $showsDeleteConfirmation) {
+            VelvetIconButtonLabel(systemName: "ellipsis")
         }
-        .accessibilityLabel("More options")
-    }
-
-    private func headerIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-            .frame(width: 36, height: 36)
-            .background(Color(.tertiarySystemFill), in: Circle())
     }
 
     private var connectionButton: some View {
-        Button {
-            handleConnectionTap()
-        } label: {
-            HStack {
-                if connectionState == .connecting {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: connectionState == .connected ? "checkmark.shield.fill" : "power")
-                }
-                Text(connectionButtonTitle)
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 50)
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
-        .disabled(connectionState == .connecting)
-        .accessibilityHint(
-            connectionState == .connected
-                ? "Disconnects the demo VPN"
-                : "Connects the demo VPN"
-        )
+        VelvetConnectButton(connectionState: $connectionState, onTap: handleConnectionTap)
     }
 
     private var locationsList: some View {
@@ -233,6 +170,7 @@ struct VPNBottomPanel: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .velvetTapTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -240,7 +178,7 @@ struct VPNBottomPanel: View {
             }
             .font(.subheadline)
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .frame(minHeight: VelvetTheme.minimumTapTarget)
             .background(Color(.tertiarySystemFill), in: Capsule())
 
             filterMenu
@@ -282,14 +220,11 @@ struct VPNBottomPanel: View {
                 }
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(query.isDefault ? Color.primary : Color.white)
-                .frame(width: 36, height: 36)
-                .background(
-                    query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent,
-                    in: Circle()
-                )
+            VelvetIconButtonLabel(
+                systemName: "line.3.horizontal.decrease",
+                foreground: query.isDefault ? .primary : .white,
+                background: query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent
+            )
         }
         .accessibilityLabel("Filter and sort servers")
     }
@@ -309,7 +244,7 @@ struct VPNBottomPanel: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(VelvetTheme.accent)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .frame(minHeight: VelvetTheme.minimumTapTarget)
                         .background(VelvetTheme.accent.opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
@@ -368,8 +303,9 @@ struct VPNBottomPanel: View {
                     Image(systemName: "plus")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 38, height: 38)
+                        .frame(width: VelvetTheme.iconVisualSize, height: VelvetTheme.iconVisualSize)
                         .background(Color(.tertiarySystemFill), in: Circle())
+                        .velvetTapTarget()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Find a server to add")
@@ -709,14 +645,6 @@ struct VPNBottomPanel: View {
         case .excellent: 1
         case .good: 0.67
         case .fair: 0.34
-        }
-    }
-
-    private var connectionButtonTitle: String {
-        switch connectionState {
-        case .disconnected: "Connect"
-        case .connecting: "Connecting…"
-        case .connected: "Connected"
         }
     }
 

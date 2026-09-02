@@ -18,6 +18,14 @@ enum VelvetMotion {
     static let mapCameraReducedDuration = 0.25
     /// Onboarding globe spin-up.
     static let globeIntroDuration = 0.9
+    /// Add-subscription pull-back: full globe with side margins in the header–form band.
+    static let globePullbackDuration = 0.78
+    /// Idle globe spin — degrees per 48ms tick (matches prior visual speed).
+    static let globeSpinStepPerTick = 0.016
+    static let globeSpinFrameInterval: Duration = .milliseconds(48)
+    static let globeSpinRenderInterval: Duration = .milliseconds(16)
+    /// Same visual spin rate as the idle globe, scaled to the 16ms render loop.
+    static let globeSpinStepPerFrame = globeSpinStepPerTick * 16.0 / 48.0
 
     // MARK: - Physicality
 
@@ -65,6 +73,16 @@ enum VelvetMotion {
         .timingCurve(0.77, 0, 0.175, 1, duration: duration)
     }
 
+    /// Samples the on-screen-movement curve for camera flights we drive per frame.
+    static func easeInOutProgress(_ t: Double) -> Double {
+        unitBezierY(x: min(max(t, 0), 1), p1x: 0.77, p1y: 0, p2x: 0.175, p2y: 1)
+    }
+
+    /// `cubic-bezier(0.23, 1, 0.32, 1)` — fast start, gentle settle (pull-back zoom).
+    static func easeOutProgress(_ t: Double) -> Double {
+        unitBezierY(x: min(max(t, 0), 1), p1x: 0.23, p1y: 1, p2x: 0.32, p2y: 1)
+    }
+
     // MARK: - Composed animations
 
     static func press(reduceMotion: Bool) -> Animation {
@@ -100,6 +118,10 @@ enum VelvetMotion {
 
     static func mapCamera(reduceMotion: Bool) -> Animation {
         easeInOut(duration: reduceMotion ? mapCameraReducedDuration : mapCameraDuration)
+    }
+
+    static func globePullback(reduceMotion: Bool) -> Double {
+        reduceMotion ? 0 : globePullbackDuration
     }
 
     static func scrim(reduceMotion: Bool) -> Animation {
@@ -174,5 +196,35 @@ enum VelvetMotion {
         let end = min(start + 0.5, 1)
         let value = min(max((progress - start) / max(end - start, 0.001), 0), 1)
         return value * value * (3 - 2 * value)
+    }
+
+    /// Newton–Raphson sample of a unit cubic Bézier, matching CSS `cubic-bezier`.
+    private static func unitBezierY(
+        x: Double,
+        p1x: Double,
+        p1y: Double,
+        p2x: Double,
+        p2y: Double
+    ) -> Double {
+        var guess = x
+        for _ in 0..<8 {
+            let currentX = bezierSample(guess, p1x, p2x)
+            let delta = currentX - x
+            if abs(delta) < 1e-6 { break }
+            let derivative = bezierDerivative(guess, p1x, p2x)
+            guard abs(derivative) > 1e-6 else { break }
+            guess = min(max(guess - delta / derivative, 0), 1)
+        }
+        return bezierSample(guess, p1y, p2y)
+    }
+
+    private static func bezierSample(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+        let oneMinus = 1 - t
+        return 3 * oneMinus * oneMinus * t * p1 + 3 * oneMinus * t * t * p2 + t * t * t
+    }
+
+    private static func bezierDerivative(_ t: Double, _ p1: Double, _ p2: Double) -> Double {
+        let oneMinus = 1 - t
+        return 3 * oneMinus * oneMinus * p1 + 6 * oneMinus * t * (p2 - p1) + 3 * t * t * (1 - p2)
     }
 }

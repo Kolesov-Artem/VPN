@@ -17,6 +17,24 @@ enum VPNPanelStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// Bottom map contrast behind the status text and panel. `nil` keeps onboarding
+/// clear so the connect form owns its own backdrop.
+enum VPNBottomBackdropStyle: String, CaseIterable, Identifiable {
+    case blur
+    case purple
+    case none
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blur: "Frosted blur"
+        case .purple: "Brand tint"
+        case .none: "None"
+        }
+    }
+}
+
 struct HomeView: View {
     @Binding var route: AppRoute
 
@@ -28,7 +46,10 @@ struct HomeView: View {
     @State private var selectedLocation = VPNLocation.samples[0]
     @State private var showsSettings = false
     @State private var isPanelInteracting = false
+    @State private var hasEnteredHome: Bool
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
+    @AppStorage("velvet.bottomBackdropStyle") private var bottomBackdropStyle = VPNBottomBackdropStyle.blur
+    @ScaledMetric(relativeTo: .largeTitle) private var connectionSummaryIconSize = 48
 
     init(route: Binding<AppRoute>) {
         _route = route
@@ -53,6 +74,7 @@ struct HomeView: View {
         let initialPanelPosition = BottomPanelPosition.island
 #endif
         _panelPosition = State(initialValue: initialPanelPosition)
+        _hasEnteredHome = State(initialValue: route.wrappedValue == .home)
     }
 
     var body: some View {
@@ -150,14 +172,24 @@ struct HomeView: View {
                 safeAreaTop: safeAreaTop
             )
             let summaryPadding = detents.summaryBottomPadding(for: panelPosition)
+            let mapViewport = VelvetMapViewportBand(
+                screenWidth: proxy.size.width,
+                screenHeight: proxy.size.height,
+                topInset: safeAreaTop + 68,
+                bottomInset: mapViewportBottomInset(
+                    screenHeight: proxy.size.height,
+                    safeAreaBottom: safeAreaBottom,
+                    detents: detents
+                )
+            )
 
             ZStack(alignment: .bottom) {
                 VelvetMapBackground(
                     selectedLocation: selectedLocation,
                     isConnected: connectionState == .connected,
-                    isInteractive: route == .home,
-                    autoRotates: route == .onboarding,
-                    includesBottomContrast: route == .home,
+                    atmosphere: mapAtmosphere,
+                    bottomBackdropStyle: bottomBackdropStyle,
+                    viewportBand: mapViewport,
                     onPickCoordinate: selectNearestServer
                 )
                 .animation(nil, value: panelPosition)
@@ -174,7 +206,6 @@ struct HomeView: View {
                             .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
                     }
                 }
-                .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
 
                 if route == .home {
                     panel(safeAreaBottom, safeAreaTop, detents)
@@ -188,7 +219,36 @@ struct HomeView: View {
             }
             .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
             .ignoresSafeArea(edges: .bottom)
+            .onChange(of: route) { _, newRoute in
+                if newRoute == .home {
+                    hasEnteredHome = true
+                }
+            }
         }
+    }
+
+    /// First-run connect keeps the idle globe spin. Adding a configuration from
+    /// home must reuse the live map and only pull the camera back.
+    private var mapAtmosphere: VelvetMapAtmosphere {
+        switch route {
+        case .home:
+            .focused
+        case .onboarding:
+            hasEnteredHome ? .pullbackGlobe : .spinningGlobe
+        }
+    }
+
+    /// Bottom edge of the globe band: island on home, connect form when adding.
+    private func mapViewportBottomInset(
+        screenHeight: CGFloat,
+        safeAreaBottom: CGFloat,
+        detents: BottomPanelDetents
+    ) -> CGFloat {
+        if route == .onboarding, hasEnteredHome {
+            return screenHeight * 0.52 + max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
+        }
+
+        return detents.height(for: .island) + detents.bottomMargin + 16
     }
 
     private func detents(
@@ -214,9 +274,12 @@ struct HomeView: View {
     }
 
     private var settingsSheet: some View {
-        SettingsView(panelStyle: $panelStyle)
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
+        SettingsView(
+            panelStyle: $panelStyle,
+            bottomBackdropStyle: $bottomBackdropStyle
+        )
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var presentationDetent: Binding<PresentationDetent> {
@@ -252,78 +315,94 @@ struct HomeView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
+            if route == .onboarding && hasEnteredHome {
+                headerCircleButton(symbol: "xmark", label: "Cancel adding configuration") {
+                    returnToHome()
+                }
+                .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
+            }
+
             VelvetBrand()
 
             Spacer()
 
             if route == .home {
-                Button {
+                headerCircleButton(symbol: "plus", label: "Add VPN configuration") {
                     withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
                         route = .onboarding
                     }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background(.regularMaterial, in: Circle())
                 }
-                .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel("Add VPN configuration")
                 .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
 
-                Button {
+                headerCircleButton(symbol: "gearshape", label: "Settings") {
                     showsSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background(.regularMaterial, in: Circle())
                 }
-                .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel("Settings")
                 .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, VelvetTheme.headerHorizontalPadding)
         .padding(.top, 12)
         .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
     }
 
+    private func headerCircleButton(
+        symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
+                .background(.regularMaterial, in: Circle())
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel(label)
+    }
+
+    private func returnToHome() {
+        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+            route = .home
+        }
+    }
+
     private func onboardingOverlay(safeAreaBottom: CGFloat) -> some View {
-        ConnectVPNView(route: $route)
+        ConnectVPNView(route: $route, canCancel: hasEnteredHome)
             .padding(.horizontal, VelvetTheme.horizontalPadding)
             .padding(.top, 20)
             .padding(.bottom, max(safeAreaBottom, VelvetTheme.minimumBottomMargin))
             .frame(maxWidth: .infinity)
-            .background {
-                OnboardingContentBackdrop()
-            }
             .keyboardLift()
     }
 
     private var connectionSummary: some View {
         VStack(spacing: 12) {
             Image(systemName: connectionState == .connected ? "lock.shield.fill" : "shield")
-                .font(.system(size: 48, weight: .medium))
+                .font(.system(size: connectionSummaryIconSize, weight: .medium))
                 .foregroundStyle(connectionState == .connected ? Color.green : Color.primary.opacity(0.72))
                 .contentTransition(.symbolEffect(.replace))
+                .scaleEffect(connectionState == .connected ? 1.04 : 1)
 
             Text(connectionState == .connected ? "Protected" : "Ready to connect")
                 .font(.title3.weight(.semibold))
+                .contentTransition(.numericText())
 
             Label(selectedLocation.name, systemImage: "location.fill")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
+        .sensoryFeedback(.success, trigger: connectionState) { _, new in
+            new == .connected
+        }
         .accessibilityElement(children: .combine)
     }
 }
 
 private struct SettingsView: View {
     @Binding var panelStyle: VPNPanelStyle
+    @Binding var bottomBackdropStyle: VPNBottomBackdropStyle
 
     @Environment(\.dismiss) private var dismiss
     @State private var connectsAutomatically = true
@@ -347,6 +426,18 @@ private struct SettingsView: View {
                     Text("Bottom panel")
                 } footer: {
                     Text("The island floats above the map. The sheet expands to full screen before the country list scrolls.")
+                }
+
+                Section {
+                    Picker("Backdrop", selection: $bottomBackdropStyle) {
+                        ForEach(VPNBottomBackdropStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                } header: {
+                    Text("Map backdrop")
+                } footer: {
+                    Text("The tint below the status text. Brand tint turns green while the VPN is connected.")
                 }
 
                 Section("Prototype") {

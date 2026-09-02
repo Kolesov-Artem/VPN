@@ -210,8 +210,8 @@ struct VPNIslandPanel: View {
 
                     floatingListContent(
                         detents: detents,
-                        progress: 1,
-                        animateRows: false,
+                        progress: layout.listProgress,
+                        animateRows: shouldAnimateRows(layout: layout),
                         embedListInScrollView: false
                     )
                     .opacity(layout.listProgress)
@@ -314,7 +314,7 @@ struct VPNIslandPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .lineLimit(1)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             .truncationMode(.tail)
 
             Spacer(minLength: 4)
@@ -325,8 +325,10 @@ struct VPNIslandPanel: View {
             Button {
                 togglePosition()
             } label: {
-                headerIcon(position == .island ? "chevron.up" : "chevron.down")
-                    .contentTransition(.symbolEffect(.replace))
+                VelvetIconButtonLabel(
+                    systemName: position == .island ? "chevron.up" : "chevron.down"
+                )
+                .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(PressScaleButtonStyle())
             .fixedSize()
@@ -337,84 +339,17 @@ struct VPNIslandPanel: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            ControlGroup {
-                Button {} label: {
-                    Label("Info", systemImage: "info.circle")
-                }
-
-                Button {} label: {
-                    Label("Support", systemImage: "paperplane")
-                }
-            }
-            .controlGroupStyle(.compactMenu)
-
-            Section {
-                Button {} label: {
-                    Label("Routing", systemImage: "arrow.triangle.branch")
-                }
-
-                Button {} label: {
-                    Label("Update subscription", systemImage: "arrow.clockwise.circle")
-                }
-
-                Button {} label: {
-                    Label("Check ping", systemImage: "speedometer")
-                }
-
-                Button {} label: {
-                    Label("Edit", systemImage: "square.and.pencil")
-                }
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    showsDeleteConfirmation = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
-        } label: {
-            headerIcon("ellipsis")
+        VPNConfigOptionsMenu(showsDeleteConfirmation: $showsDeleteConfirmation) {
+            VelvetIconButtonLabel(systemName: "ellipsis")
         }
-        .accessibilityLabel("More options")
-    }
-
-    private func headerIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-            .frame(width: 36, height: 36)
-            .background(Color(.tertiarySystemFill), in: Circle())
     }
 
     private var connectionButton: some View {
-        Button {
-            handleConnectionTap()
-        } label: {
-            HStack {
-                if connectionState == .connecting {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: connectionState == .connected ? "checkmark.shield.fill" : "power")
-                }
-                Text(connectionButtonTitle)
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 50)
-            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
-        .disabled(connectionState == .connecting)
-        .accessibilityHint(
-            connectionState == .connected
-                ? "Disconnects the demo VPN"
-                : "Connects the demo VPN"
-        )
+        VelvetConnectButton(connectionState: $connectionState, onTap: handleConnectionTap)
+    }
+
+    private func shouldAnimateRows(layout: BottomPanelVisualState) -> Bool {
+        !reduceMotion && !isDraggingPanel && layout.listProgress > 0.05 && layout.listProgress < 0.98
     }
 
     private func floatingListContent(
@@ -517,6 +452,7 @@ struct VPNIslandPanel: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
+                            .velvetTapTarget()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -524,7 +460,7 @@ struct VPNIslandPanel: View {
             }
             .font(.subheadline)
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .frame(minHeight: VelvetTheme.minimumTapTarget)
             .background(Color(.tertiarySystemFill), in: Capsule())
 
             filterMenu
@@ -566,14 +502,11 @@ struct VPNIslandPanel: View {
                 }
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(query.isDefault ? Color.primary : Color.white)
-                .frame(width: 36, height: 36)
-                .background(
-                    query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent,
-                    in: Circle()
-                )
+            VelvetIconButtonLabel(
+                systemName: "line.3.horizontal.decrease",
+                foreground: query.isDefault ? .primary : .white,
+                background: query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent
+            )
         }
         .accessibilityLabel("Filter and sort servers")
     }
@@ -593,7 +526,7 @@ struct VPNIslandPanel: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(VelvetTheme.accent)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .frame(minHeight: VelvetTheme.minimumTapTarget)
                         .background(VelvetTheme.accent.opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
@@ -661,7 +594,7 @@ struct VPNIslandPanel: View {
                     }
                 }
             }
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: VelvetTheme.cardRadius))
         }
     }
 
@@ -728,17 +661,6 @@ struct VPNIslandPanel: View {
         query.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "All locations"
             : "Search results"
-    }
-
-    private var connectionButtonTitle: String {
-        switch connectionState {
-        case .disconnected:
-            "Connect"
-        case .connecting:
-            "Connecting…"
-        case .connected:
-            "Connected"
-        }
     }
 
     private func sheetCollapseGesture(detents: BottomPanelDetents) -> some Gesture {

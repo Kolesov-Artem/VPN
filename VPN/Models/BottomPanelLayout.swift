@@ -174,8 +174,9 @@ enum BottomPanelInterpolator {
             collapsedContentOpacity: collapsedOpacity,
             listProgress: listProgress,
             shadowOpacity: shadowOpacity,
-            shadowRadius: 20 + 4 * sheetMorphProgress,
-            shadowY: -4 - 4 * sheetMorphProgress
+            shadowRadius: VelvetTheme.islandShadowRadius
+                + (VelvetTheme.expandedShadowRadius - VelvetTheme.islandShadowRadius) * sheetMorphProgress,
+            shadowY: -2 - 2 * sheetMorphProgress
         )
     }
 

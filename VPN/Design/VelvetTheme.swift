@@ -18,8 +18,12 @@ enum VelvetTheme {
     )
 
     static let horizontalPadding: CGFloat = 16
+    static let headerHorizontalPadding: CGFloat = 20
     static let controlRadius: CGFloat = 16
+    static let cardRadius: CGFloat = 20
     static let panelRadius: CGFloat = 28
+    static let iconVisualSize: CGFloat = 36
+    static let minimumTapTarget: CGFloat = 44
     static let islandHorizontalInset: CGFloat = 20
     /// Compact floating margin at the half-height detent (Find My card inset).
     static let islandHalfMargin: CGFloat = 8
@@ -29,8 +33,10 @@ enum VelvetTheme {
     /// Fallback bottom margin for devices without a home indicator, matching the
     /// minimum layout margin Apple recommends for edge-adjacent content.
     static let minimumBottomMargin: CGFloat = 16
-    static let islandShadowOpacity: CGFloat = 0.22
-    static let expandedShadowOpacity: CGFloat = 0.14
+    static let islandShadowOpacity: CGFloat = 0.12
+    static let expandedShadowOpacity: CGFloat = 0.08
+    static let islandShadowRadius: CGFloat = 12
+    static let expandedShadowRadius: CGFloat = 16
 }
 
 struct VelvetBackground: View {
@@ -60,6 +66,34 @@ struct VelvetBrand: View {
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Velvet VPN")
+    }
+}
+
+/// Circular panel control: 36pt visual, 44pt HIG hit area.
+struct VelvetIconButtonLabel: View {
+    let systemName: String
+    var foreground: Color = .primary
+    var background: Color = Color(.tertiarySystemFill)
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(foreground)
+            .frame(width: VelvetTheme.iconVisualSize, height: VelvetTheme.iconVisualSize)
+            .background(background, in: Circle())
+            .frame(width: VelvetTheme.minimumTapTarget, height: VelvetTheme.minimumTapTarget)
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// Expands tappable area to the HIG minimum without changing visual size.
+    func velvetTapTarget(
+        width: CGFloat = VelvetTheme.minimumTapTarget,
+        height: CGFloat = VelvetTheme.minimumTapTarget
+    ) -> some View {
+        frame(width: width, height: height)
+            .contentShape(Rectangle())
     }
 }
 

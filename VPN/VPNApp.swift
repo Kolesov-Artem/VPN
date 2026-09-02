@@ -24,6 +24,14 @@ private struct RootView: View {
     }
 
     var body: some View {
+#if DEBUG
+        if CommandLine.arguments.contains("--prototype-onboarding") {
+            OnboardingPrototypeHarness()
+        } else {
+            HomeView(route: $route)
+        }
+#else
         HomeView(route: $route)
+#endif
     }
 }
