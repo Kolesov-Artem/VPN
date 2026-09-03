@@ -6,6 +6,14 @@ enum BottomPanelPosition: Equatable {
     case intermediate
     case expanded
 
+    /// Half-height detents should grow to full screen once search becomes active.
+    func expandedForActiveSearch(isFocused: Bool, queryText: String) -> BottomPanelPosition? {
+        guard self == .intermediate else { return nil }
+        let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isFocused || !trimmed.isEmpty else { return nil }
+        return .expanded
+    }
+
     var nextHigher: BottomPanelPosition {
         switch self {
         case .island: .intermediate
@@ -58,7 +66,7 @@ struct BottomPanelDetents {
     ) -> BottomPanelDetents {
         let expandedHeight = screenHeight * 0.92
         let intermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.56)
-        let islandHeight: CGFloat = isAccessibilitySize ? 210 : 154
+        let islandHeight: CGFloat = isAccessibilitySize ? 280 : 218
 
         return BottomPanelDetents(
             expandedHeight: expandedHeight,
@@ -80,7 +88,7 @@ struct BottomPanelDetents {
         let topMargin = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
         let expandedHeight = screenHeight - topMargin
         let intermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.50)
-        let islandHeight: CGFloat = isAccessibilitySize ? 210 : 154
+        let islandHeight: CGFloat = isAccessibilitySize ? 280 : 218
 
         return BottomPanelDetents(
             expandedHeight: expandedHeight,

@@ -10,10 +10,15 @@ enum VPNConnectionState: Equatable {
     case disconnected
     case connecting
     case connected
+    case failed(message: String)
+
+    var isConnected: Bool {
+        if case .connected = self { true } else { false }
+    }
 
     mutating func handlePrimaryAction() {
         switch self {
-        case .disconnected:
+        case .disconnected, .failed:
             self = .connecting
         case .connecting:
             break
@@ -30,7 +35,7 @@ enum VPNConnectionState: Equatable {
 
 /// Where a server sits on the globe. Kept free of CoreLocation so the model
 /// stays comparable and testable without importing MapKit types.
-struct GeoCoordinate: Equatable {
+struct GeoCoordinate: Equatable, Codable {
     let latitude: Double
     let longitude: Double
 
@@ -50,8 +55,8 @@ struct GeoCoordinate: Equatable {
     }
 }
 
-struct VPNLocation: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct VPNLocation: Identifiable, Equatable, Codable {
+    enum Kind: Equatable, Codable {
         case smart
         case lte
         case standard
@@ -65,7 +70,7 @@ struct VPNLocation: Identifiable, Equatable {
         }
     }
 
-    enum Signal: Equatable {
+    enum Signal: Equatable, Codable {
         case excellent
         case good
         case fair
@@ -191,12 +196,14 @@ struct VPNLocationQuery: Equatable {
         case filter(VPNLocationFilter)
         case sort(VPNLocationSort)
         case fastOnly
+        case provider(UUID, name: String)
 
         var id: String {
             switch self {
             case .filter(let filter): "filter-\(filter.id)"
             case .sort(let sort): "sort-\(sort.id)"
             case .fastOnly: "fast-only"
+            case .provider(let id, _): "provider-\(id.uuidString)"
             }
         }
 
@@ -205,6 +212,7 @@ struct VPNLocationQuery: Equatable {
             case .filter(let filter): filter.title
             case .sort(let sort): sort.title
             case .fastOnly: "Under \(VPNLocation.fastPingThreshold) ms"
+            case .provider(_, let name): "Provider: \(name)"
             }
         }
     }
@@ -213,16 +221,21 @@ struct VPNLocationQuery: Equatable {
     var filter = VPNLocationFilter.all
     var sort = VPNLocationSort.fastest
     var fastOnly = false
+    var providerID: UUID?
+    var providerName: String?
 
     /// True while nothing but free text is narrowing the list, which is when the
     /// chip strip stays hidden and the sheet shows only one row of controls.
     var isDefault: Bool {
-        filter == .all && sort == .fastest && !fastOnly
+        filter == .all && sort == .fastest && !fastOnly && providerID == nil
     }
 
     var activeChips: [Chip] {
         var chips: [Chip] = []
 
+        if let providerID, let providerName {
+            chips.append(.provider(providerID, name: providerName))
+        }
         if filter != .all {
             chips.append(.filter(filter))
         }
@@ -241,6 +254,7 @@ struct VPNLocationQuery: Equatable {
         case .filter: filter = .all
         case .sort: sort = .fastest
         case .fastOnly: fastOnly = false
+        case .provider: providerID = nil; providerName = nil
         }
     }
 
@@ -248,6 +262,50 @@ struct VPNLocationQuery: Equatable {
         filter = .all
         sort = .fastest
         fastOnly = false
+        providerID = nil
+        providerName = nil
+    }
+}
+
+extension VPNLocationQuery {
+    func matches(_ networkLocation: VPNNetworkLocation) -> Bool {
+        let location = networkLocation.location
+
+        guard filter.accepts(location) else { return false }
+        guard !fastOnly || location.ping < VPNLocation.fastPingThreshold else { return false }
+
+        if let providerID {
+            guard networkLocation.provider.id == providerID else { return false }
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        let haystack = [
+            location.name,
+            location.city,
+            location.kind.title,
+            networkLocation.provider.name,
+            networkLocation.optimizationHint,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+
+        return haystack.localizedCaseInsensitiveContains(trimmed)
+    }
+
+    func matchesSmartRow(title: String, subtitle: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        return "\(title) \(subtitle)".localizedCaseInsensitiveContains(trimmed)
+    }
+
+    func matchesSmartRussiaRow() -> Bool {
+        filter == .all || filter == .lte
+    }
+
+    func matchesSmartEuropeRow() -> Bool {
+        filter == .all || filter == .standard
     }
 }
 

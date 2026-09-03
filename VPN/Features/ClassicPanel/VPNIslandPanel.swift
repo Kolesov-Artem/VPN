@@ -18,6 +18,13 @@ struct VPNIslandPanel: View {
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
     @Binding var isPanelInteracting: Bool
+    var onShowConnectionInfo: (() -> Void)? = nil
+
+    let mockPublicIP: String
+    let downloadRate: String
+    let uploadRate: String
+    let sessionDurationText: String
+
     let safeAreaBottom: CGFloat
     let safeAreaTop: CGFloat
 
@@ -108,6 +115,12 @@ struct VPNIslandPanel: View {
                 isCollapsingFromScroll = false
             }
         }
+        .onChange(of: searchIsFocused) { _, focused in
+            expandPanelForSearchIfNeeded(isFocused: focused)
+        }
+        .onChange(of: query.text) { _, _ in
+            expandPanelForSearchIfNeeded(isFocused: searchIsFocused)
+        }
         .confirmationDialog(
             "Delete this configuration?",
             isPresented: $showsDeleteConfirmation,
@@ -160,11 +173,13 @@ struct VPNIslandPanel: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            connectionButton
-                .padding(.horizontal, 16)
-                .padding(.top, panelChromeHeight + 16)
-                .opacity(layout.collapsedContentOpacity)
-                .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
+            VStack(spacing: 10) {
+                connectionButton
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, panelChromeHeight + 8)
+            .opacity(layout.collapsedContentOpacity)
+            .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
         }
         .frame(height: layout.panelHeight, alignment: .top)
         .frame(maxWidth: .infinity)
@@ -188,7 +203,26 @@ struct VPNIslandPanel: View {
     }
 
     private var panelChromeHeight: CGFloat {
-        BottomPanelDetents.expandedGripBandHeight + 44
+        let headerHeight = BottomPanelDetents.expandedGripBandHeight + 44
+        guard connectionState == .connected else { return headerHeight }
+        return headerHeight + 58
+    }
+
+    @ViewBuilder
+    private var connectionStatsStrip: some View {
+        if connectionState == .connected {
+            ConnectionStatsStrip(
+                mockPublicIP: mockPublicIP,
+                regionLabel: selectedLocation.name,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                durationText: sessionDurationText,
+                onTap: onShowConnectionInfo
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     /// Keeps search pinned at full opacity in expanded and intermediate detents.
@@ -227,7 +261,10 @@ struct VPNIslandPanel: View {
                 )
             }
             .frame(height: 44)
+
+            connectionStatsStrip
         }
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
 
     /// Single scroll container for island, intermediate, and expanded so the
@@ -346,25 +383,33 @@ struct VPNIslandPanel: View {
 
     private var panelHeader: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(VelvetTheme.accent.opacity(0.13))
-                Image(systemName: "shield.lefthalf.filled")
-                    .foregroundStyle(VelvetTheme.accent)
-            }
-            .frame(width: 40, height: 40)
+            if position == .island {
+                ConnectionStatusLabels(
+                    connectionState: connectionState,
+                    selectedLocation: selectedLocation,
+                    onTap: onShowConnectionInfo
+                )
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(VelvetTheme.accent.opacity(0.13))
+                    Image(systemName: "shield.lefthalf.filled")
+                        .foregroundStyle(VelvetTheme.accent)
+                }
+                .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Velvet VPN")
-                    .font(.subheadline.weight(.semibold))
-                Text("99% traffic · 933 days")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Velvet VPN")
+                        .font(.subheadline.weight(.semibold))
+                    Text("99% traffic · 933 days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
+            }
 
             moreMenu
                 .fixedSize()
@@ -381,6 +426,7 @@ struct VPNIslandPanel: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
 
     private var moreMenu: some View {
@@ -701,6 +747,8 @@ struct VPNIslandPanel: View {
             "Connecting…"
         case .connected:
             "Connected"
+        case .failed:
+            "Retry"
         }
     }
 
@@ -804,6 +852,20 @@ struct VPNIslandPanel: View {
             isScrollAtTop = true
             isCollapsingFromScroll = false
             isDraggingPanel = false
+        }
+        schedulePositionAnimationEnd()
+    }
+
+    private func expandPanelForSearchIfNeeded(isFocused: Bool) {
+        guard let target = position.expandedForActiveSearch(
+            isFocused: isFocused,
+            queryText: query.text
+        ) else { return }
+
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = target
+            dragTranslation = 0
         }
         schedulePositionAnimationEnd()
     }

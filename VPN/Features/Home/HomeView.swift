@@ -6,15 +6,31 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var providerStore = VPNProviderStore()
     @State private var panelPosition = BottomPanelPosition.island
     @State private var connectionState = VPNConnectionState.disconnected
     @State private var selectedLocation = VPNLocation.samples[0]
-    @State private var locationSelection: VPNLocationSelection = .smart(.auto)
+    @State private var locationSelection: VPNLocationSelection = .smartAuto(scope: .allNetworks)
+    @State private var selectionSource: VPNSelectionSource = .useCase(.smart)
     @State private var resolvedConnection: VPNResolvedConnection?
     @State private var showsSettings = false
+    @State private var showsRoutingSettings = false
+    @State private var showsConnectionInfo = false
     @State private var isPanelInteracting = false
+    @State private var isAddingConfiguration = false
+    @State private var isSwitchingServer = false
+    @State private var importToastMessage: String?
+    @State private var connectedAt: Date?
+    @State private var mockPublicIP = "185.42.18.90"
+    @State private var downloadRate = "0 KB/s"
+    @State private var uploadRate = "0 KB/s"
+    @State private var shouldAutoConnect = false
+    @State private var statsTask: Task<Void, Never>?
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
     @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
+    @AppStorage("velvet.autoConnect") private var autoConnect = false
+    @AppStorage("velvet.connectLastLocation") private var connectLastLocation = true
+    @AppStorage("velvet.defaultUserJob") private var defaultUserJobRaw = VPNUserJob.streaming.rawValue
 
     init(route: Binding<AppRoute>) {
         _route = route
@@ -56,22 +72,73 @@ struct HomeView: View {
         .sheet(isPresented: $showsSettings) {
             settingsSheet
         }
+        .sheet(isPresented: $showsRoutingSettings) {
+            VPNRoutingSettingsView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showsConnectionInfo) {
+            VPNConnectionInfoView(
+                resolvedConnection: resolvedConnection,
+                connectedAt: connectedAt,
+                mockPublicIP: mockPublicIP
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .onChange(of: homeFormat) { _, _ in
             panelPosition = .island
             resolvedConnection = nil
+            connectionState = .disconnected
+            connectedAt = nil
+            stopStatsTicker()
+        }
+        .onChange(of: locationSelection) { _, selection in
+            persistLocationSelection(selection)
+        }
+        .onChange(of: connectionState) { _, newValue in
+            switch newValue {
+            case .connected:
+                if connectedAt == nil {
+                    connectedAt = .now
+                }
+                mockPublicIP = mockIP(for: resolvedConnection)
+                startStatsTicker()
+                VPNLogsStore.shared.append("Connected to \(resolvedConnection?.provider.name ?? "VPN")")
+            case .disconnected, .failed:
+                connectedAt = nil
+                stopStatsTicker()
+            case .connecting:
+                break
+            }
+        }
+        .onAppear {
+            restoreLastLocationSelection()
+            guard autoConnect, route == .home, connectionState == .disconnected else { return }
+            shouldAutoConnect = true
         }
     }
 
     private var networksIslandLayout: some View {
         mapLayer { safeAreaBottom, safeAreaTop, _ in
             VPNNetworksIslandPanel(
-                providers: VPNProvider.samples,
+                providerStore: providerStore,
                 position: $panelPosition,
                 connectionState: $connectionState,
                 selectedLocation: $selectedLocation,
                 locationSelection: $locationSelection,
+                selectionSource: $selectionSource,
                 resolvedConnection: $resolvedConnection,
+                isSwitchingServer: $isSwitchingServer,
                 isPanelInteracting: $isPanelInteracting,
+                showsRoutingSettings: $showsRoutingSettings,
+                connectedAt: $connectedAt,
+                shouldAutoConnect: $shouldAutoConnect,
+                mockPublicIP: mockPublicIP,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                sessionDurationText: sessionDurationText,
+                onShowConnectionInfo: { showsConnectionInfo = true },
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop
             )
@@ -85,6 +152,11 @@ struct HomeView: View {
                 connectionState: $connectionState,
                 selectedLocation: $selectedLocation,
                 isPanelInteracting: $isPanelInteracting,
+                onShowConnectionInfo: { showsConnectionInfo = true },
+                mockPublicIP: mockPublicIP,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                sessionDurationText: sessionDurationText,
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop
             )
@@ -97,7 +169,12 @@ struct HomeView: View {
                 VPNBottomPanel(
                     position: $panelPosition,
                     connectionState: $connectionState,
-                    selectedLocation: $selectedLocation
+                    selectedLocation: $selectedLocation,
+                    onShowConnectionInfo: { showsConnectionInfo = true },
+                    mockPublicIP: mockPublicIP,
+                    downloadRate: downloadRate,
+                    uploadRate: uploadRate,
+                    sessionDurationText: sessionDurationText
                 )
                 .presentationDetents(
                     [
@@ -148,12 +225,11 @@ struct HomeView: View {
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop
             )
-            let summaryPadding = detents.summaryBottomPadding(for: panelPosition)
 
             ZStack(alignment: .bottom) {
                 VelvetMapBackground(
                     selectedLocation: selectedLocation,
-                    isConnected: connectionState == .connected,
+                    isConnected: connectionState.isConnected,
                     isInteractive: route == .home,
                     autoRotates: route == .onboarding,
                     includesBottomContrast: route == .home,
@@ -163,21 +239,7 @@ struct HomeView: View {
 
                 VStack(spacing: 0) {
                     header
-
                     Spacer()
-
-                    if route == .home {
-                        ConnectionSummaryView(
-                            connectionState: connectionState,
-                            homeFormat: homeFormat,
-                            selectedLocation: selectedLocation,
-                            resolvedConnection: resolvedConnection,
-                            reduceMotion: reduceMotion
-                        )
-                        .padding(.bottom, summaryPadding)
-                        .animation(VelvetMotion.easeOut(duration: 0.25), value: panelPosition)
-                        .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
-                    }
                 }
                 .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
 
@@ -190,9 +252,28 @@ struct HomeView: View {
                     onboardingOverlay(safeAreaBottom: safeAreaBottom)
                         .transition(VelvetMotion.onboardingContent(reduceMotion: reduceMotion))
                 }
+
+                if let importToastMessage {
+                    importToast(importToastMessage)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .zIndex(1)
+                }
             }
             .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
             .ignoresSafeArea(edges: .bottom)
+        }
+    }
+
+    private func importToast(_ message: String) -> some View {
+        VStack {
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.black.opacity(0.86), in: Capsule())
+                .padding(.top, 8)
+            Spacer()
         }
     }
 
@@ -219,9 +300,64 @@ struct HomeView: View {
     }
 
     private var settingsSheet: some View {
-        HomeSettingsView()
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+        HomeSettingsView(providerStore: providerStore) { importedName in
+            homeFormat = .networksAndLocations
+            importToastMessage = "✓  \(importedName) added from clipboard"
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2.5))
+                withAnimation {
+                    importToastMessage = nil
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var sessionDurationText: String {
+        guard let connectedAt else { return "00:00" }
+        let interval = Int(Date.now.timeIntervalSince(connectedAt))
+        return String(format: "%02d:%02d", interval / 60, interval % 60)
+    }
+
+    private func restoreLastLocationSelection() {
+        guard connectLastLocation else { return }
+        if let job = VPNUserJob(rawValue: defaultUserJobRaw) {
+            locationSelection = .smartJob(job, scope: providerStore.providerScope)
+            selectionSource = .useCase(VPNUseCaseMenuChoice.matching(locationSelection) ?? .smart)
+        }
+    }
+
+    private func persistLocationSelection(_ selection: VPNLocationSelection) {
+        if case let .smartJob(job, _) = selection {
+            defaultUserJobRaw = job.rawValue
+        }
+    }
+
+    private func mockIP(for resolvedConnection: VPNResolvedConnection?) -> String {
+        guard let resolvedConnection else { return "185.42.18.90" }
+        let suffix = abs(resolvedConnection.location.ping) % 200
+        return "185.42.\(suffix).\(18 + resolvedConnection.provider.name.count % 40)"
+    }
+
+    private func startStatsTicker() {
+        statsTask?.cancel()
+        statsTask = Task { @MainActor in
+            while !Task.isCancelled {
+                let down = Double.random(in: 8.0...24.0)
+                let up = Double.random(in: 2.0...8.0)
+                downloadRate = String(format: "%.1f MB/s", down)
+                uploadRate = String(format: "%.1f MB/s", up)
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func stopStatsTicker() {
+        statsTask?.cancel()
+        statsTask = nil
+        downloadRate = "0 KB/s"
+        uploadRate = "0 KB/s"
     }
 
     private var presentationDetent: Binding<PresentationDetent> {
@@ -262,6 +398,7 @@ struct HomeView: View {
             if route == .home {
                 Button {
                     withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+                        isAddingConfiguration = true
                         route = .onboarding
                     }
                 } label: {
@@ -295,14 +432,54 @@ struct HomeView: View {
     }
 
     private func onboardingOverlay(safeAreaBottom: CGFloat) -> some View {
-        ConnectVPNView(route: $route)
-            .padding(.horizontal, VelvetTheme.horizontalPadding)
-            .padding(.top, 20)
-            .padding(.bottom, max(safeAreaBottom, VelvetTheme.minimumBottomMargin))
-            .frame(maxWidth: .infinity)
-            .background {
-                OnboardingContentBackdrop()
+        ConnectVPNView(
+            route: $route,
+            providerStore: providerStore,
+            isAddingConfiguration: isAddingConfiguration,
+            onImportSuccess: handleImportSuccess,
+            onVelvetTrial: handleVelvetTrial,
+            onCancel: handleImportCancel
+        )
+        .padding(.horizontal, VelvetTheme.horizontalPadding)
+        .padding(.top, 20)
+        .padding(.bottom, max(safeAreaBottom, VelvetTheme.minimumBottomMargin))
+        .frame(maxWidth: .infinity)
+        .background {
+            OnboardingContentBackdrop()
+        }
+        .keyboardLift()
+    }
+
+    private func handleVelvetTrial() {
+        providerStore.resetToVelvetOnly()
+        homeFormat = .networksAndLocations
+        isAddingConfiguration = false
+        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+            route = .home
+        }
+    }
+
+    private func handleImportSuccess(_ provider: VPNProvider) {
+        homeFormat = .networksAndLocations
+        isAddingConfiguration = false
+        importToastMessage = "✓  \(provider.name) added · \(provider.subtitle)"
+        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+            route = .home
+            panelPosition = .expanded
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation {
+                importToastMessage = nil
             }
-            .keyboardLift()
+        }
+    }
+
+    private func handleImportCancel() {
+        isAddingConfiguration = false
+        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+            route = .home
+        }
     }
 }

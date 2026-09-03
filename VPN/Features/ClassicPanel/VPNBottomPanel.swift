@@ -9,7 +9,7 @@ private struct SafeAreaBottomPreferenceKey: PreferenceKey {
 }
 
 enum VPNPanelPresentation {
-    static let island = PresentationDetent.height(154)
+    static let island = PresentationDetent.height(218)
     static let intermediate = PresentationDetent.fraction(0.56)
 }
 
@@ -17,6 +17,12 @@ struct VPNBottomPanel: View {
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
+    var onShowConnectionInfo: (() -> Void)? = nil
+
+    let mockPublicIP: String
+    let downloadRate: String
+    let uploadRate: String
+    let sessionDurationText: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var searchIsFocused: Bool
@@ -33,13 +39,15 @@ struct VPNBottomPanel: View {
             panelHeader
                 .padding(.top, 8)
 
+            connectionStatsStrip
+
             // Both layers stay mounted and only cross-fade. Swapping them with
             // an `if` re-flows the panel while the detent is still animating,
             // which reads as the content stretching open.
             ZStack(alignment: .top) {
                 connectionButton
                     .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                    .padding(.top, 12)
                     .opacity(showsLocations ? 0 : 1)
                     .allowsHitTesting(!showsLocations)
                     .animation(contentAnimation, value: showsLocations)
@@ -77,6 +85,12 @@ struct VPNBottomPanel: View {
             searchIsFocused = false
             query.text = ""
         }
+        .onChange(of: searchIsFocused) { _, focused in
+            expandPanelForSearchIfNeeded(isFocused: focused)
+        }
+        .onChange(of: query.text) { _, _ in
+            expandPanelForSearchIfNeeded(isFocused: searchIsFocused)
+        }
         .confirmationDialog(
             "Delete this configuration?",
             isPresented: $showsDeleteConfirmation,
@@ -101,24 +115,32 @@ struct VPNBottomPanel: View {
 
     private var panelHeader: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(VelvetTheme.accent.opacity(0.13))
-                Image(systemName: "shield.lefthalf.filled")
-                    .foregroundStyle(VelvetTheme.accent)
-            }
-            .frame(width: 40, height: 40)
+            if position == .island {
+                ConnectionStatusLabels(
+                    connectionState: connectionState,
+                    selectedLocation: selectedLocation,
+                    onTap: onShowConnectionInfo
+                )
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(VelvetTheme.accent.opacity(0.13))
+                    Image(systemName: "shield.lefthalf.filled")
+                        .foregroundStyle(VelvetTheme.accent)
+                }
+                .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Velvet VPN")
-                    .font(.subheadline.weight(.semibold))
-                Text("99% traffic · 933 days")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Velvet VPN")
+                        .font(.subheadline.weight(.semibold))
+                    Text("99% traffic · 933 days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
+            }
 
             moreMenu
 
@@ -132,6 +154,24 @@ struct VPNBottomPanel: View {
             .accessibilityLabel(position == .island ? "Expand panel" : "Collapse panel")
         }
         .padding(.horizontal, 16)
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
+    }
+
+    @ViewBuilder
+    private var connectionStatsStrip: some View {
+        if connectionState == .connected {
+            ConnectionStatsStrip(
+                mockPublicIP: mockPublicIP,
+                regionLabel: selectedLocation.name,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                durationText: sessionDurationText,
+                onTap: onShowConnectionInfo
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     private var moreMenu: some View {
@@ -673,12 +713,24 @@ struct VPNBottomPanel: View {
         case .disconnected: "Connect"
         case .connecting: "Connecting…"
         case .connected: "Connected"
+        case .failed: "Retry"
         }
     }
 
     private func movePanelFromHeader() {
         withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {
             position = position == .island ? .intermediate : position.nextLower
+        }
+    }
+
+    private func expandPanelForSearchIfNeeded(isFocused: Bool) {
+        guard let target = position.expandedForActiveSearch(
+            isFocused: isFocused,
+            queryText: query.text
+        ) else { return }
+
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {
+            position = target
         }
     }
 

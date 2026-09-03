@@ -17,6 +17,7 @@ xcuserdata/
 # Logs and local captures
 *.log
 *.png
+!VPN/Assets.xcassets/**/*.png
 
 # macOS
 .DS_Store

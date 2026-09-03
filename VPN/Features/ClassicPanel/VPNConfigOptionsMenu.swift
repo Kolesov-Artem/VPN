@@ -1,34 +1,56 @@
 import SwiftUI
 
+enum VPNConfigMenuAction {
+    case info
+    case support
+    case routing
+    case updateSubscription
+    case checkPing
+    case edit
+}
+
 /// Shared configuration menu. Uses the system `Menu` so presentation, separators,
 /// and spring animation match other chrome (e.g. the filter menu).
 struct VPNConfigOptionsMenu<MenuLabel: View>: View {
     @Binding var showsDeleteConfirmation: Bool
+    var onAction: (VPNConfigMenuAction) -> Void
     @ViewBuilder var label: () -> MenuLabel
 
     var body: some View {
         Menu {
             ControlGroup {
-                Button {} label: {
+                Button {
+                    onAction(.info)
+                } label: {
                     Label("Info", systemImage: "info.circle")
                 }
-                Button {} label: {
+                Button {
+                    onAction(.support)
+                } label: {
                     Label("Support", systemImage: "paperplane")
                 }
             }
             .controlGroupStyle(.compactMenu)
 
             Section {
-                Button {} label: {
+                Button {
+                    onAction(.routing)
+                } label: {
                     Label("Routing", systemImage: "arrow.triangle.branch")
                 }
-                Button {} label: {
+                Button {
+                    onAction(.updateSubscription)
+                } label: {
                     Label("Update subscription", systemImage: "arrow.clockwise.circle")
                 }
-                Button {} label: {
+                Button {
+                    onAction(.checkPing)
+                } label: {
                     Label("Check ping", systemImage: "speedometer")
                 }
-                Button {} label: {
+                Button {
+                    onAction(.edit)
+                } label: {
                     Label("Edit", systemImage: "square.and.pencil")
                 }
             }

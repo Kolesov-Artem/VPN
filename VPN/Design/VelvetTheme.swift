@@ -31,6 +31,20 @@ enum VelvetTheme {
     static let minimumBottomMargin: CGFloat = 16
     static let islandShadowOpacity: CGFloat = 0.22
     static let expandedShadowOpacity: CGFloat = 0.14
+
+    /// Expanded sheet scroll canvas behind white content blocks.
+    static let sheetCanvas = Color(
+        red: 245 / 255,
+        green: 242 / 255,
+        blue: 252 / 255
+    )
+
+    /// White surface for providers, cards, and location lists inside the sheet.
+    static let contentSurface = Color(.systemBackground)
+
+    /// Bottom backdrop blur strip on the home map (Figma 316pt on 812pt canvas).
+    static let mapBottomFeatherHeight: CGFloat = 316
+    static let mapBottomFeatherHeightRatio: CGFloat = 316 / 812
 }
 
 struct VelvetBackground: View {

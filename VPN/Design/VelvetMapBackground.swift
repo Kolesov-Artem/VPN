@@ -13,6 +13,7 @@ struct VelvetMapBackground: View {
     var onPickCoordinate: (GeoCoordinate) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var camera = VelvetMapCamera.overview
     @State private var visibleRegion = VelvetMapCamera.overviewRegion
     @State private var dragOriginRegion: MKCoordinateRegion?
@@ -91,7 +92,7 @@ struct VelvetMapBackground: View {
             }
         }
         .overlay {
-            scrim
+            mapScrimOverlay
         }
         .ignoresSafeArea()
         .onAppear {
@@ -187,39 +188,63 @@ struct VelvetMapBackground: View {
         }
     }
 
-    /// Purple at the top for the brand bar, opaque at the bottom so the status
-    /// text and the panel keep their contrast over bright terrain.
-    private var scrim: some View {
+    private var mapScrimOverlay: some View {
+        GeometryReader { geometry in
+            let featherHeight = min(
+                VelvetTheme.mapBottomFeatherHeight,
+                geometry.size.height * VelvetTheme.mapBottomFeatherHeightRatio
+            )
+
+            ZStack(alignment: .bottom) {
+                topBrandScrim
+
+                if includesBottomContrast {
+                    if reduceTransparency {
+                        bottomContrastScrim(height: featherHeight)
+                    } else {
+                        VelvetBottomFeatherBlur()
+                            .frame(height: featherHeight)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+        }
+        .ignoresSafeArea()
+        .animation(VelvetMotion.scrim(reduceMotion: reduceMotion), value: isConnected)
+    }
+
+    /// Purple wash for the header; fades out before the panel so the map stays
+    /// sharp in the middle band.
+    private var topBrandScrim: some View {
         let topColor = isConnected ? Color.green : VelvetTheme.deepPurple
         let midColor = isConnected ? Color.green : VelvetTheme.deepPurple
 
-        let stops: [Gradient.Stop] =
-            if includesBottomContrast {
-                [
-                    .init(color: topColor.opacity(0.95), location: 0),
-                    .init(color: midColor.opacity(0.32), location: 0.16),
-                    .init(color: VelvetTheme.softPurple.opacity(0.06), location: 0.34),
-                    .init(color: Color(.systemBackground).opacity(0.28), location: 0.54),
-                    .init(color: Color(.systemBackground).opacity(0.9), location: 0.68),
-                    .init(color: Color(.systemBackground), location: 0.8),
-                ]
-            } else {
-                [
-                    .init(color: topColor.opacity(0.95), location: 0),
-                    .init(color: midColor.opacity(0.32), location: 0.16),
-                    .init(color: VelvetTheme.softPurple.opacity(0.06), location: 0.34),
-                    .init(color: Color.clear, location: 0.5),
-                ]
-            }
-
         return LinearGradient(
-            stops: stops,
+            stops: [
+                .init(color: topColor.opacity(0.95), location: 0),
+                .init(color: midColor.opacity(0.32), location: 0.16),
+                .init(color: VelvetTheme.softPurple.opacity(0.06), location: 0.34),
+                .init(color: Color.clear, location: 0.55),
+            ],
             startPoint: .top,
             endPoint: .bottom
         )
-        .allowsHitTesting(false)
-        .ignoresSafeArea()
-        .animation(VelvetMotion.scrim(reduceMotion: reduceMotion), value: isConnected)
+    }
+
+    /// Solid fallback when Reduce Transparency is on — no live backdrop blur.
+    private func bottomContrastScrim(height: CGFloat) -> some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color.clear, location: 0),
+                .init(color: Color(.systemBackground).opacity(0.35), location: 0.45),
+                .init(color: Color(.systemBackground).opacity(0.92), location: 0.78),
+                .init(color: Color(.systemBackground), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: height)
     }
 
     private func region(

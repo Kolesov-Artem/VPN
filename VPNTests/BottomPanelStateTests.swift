@@ -6,7 +6,7 @@ struct BottomPanelStateTests {
     private let detents = BottomPanelDetents(
         expandedHeight: 650,
         intermediateHeight: 420,
-        islandHeight: 154,
+        islandHeight: 218,
         bottomMargin: 34,
         topMargin: 0
     )
@@ -17,6 +17,40 @@ struct BottomPanelStateTests {
         #expect(BottomPanelPosition.intermediate.nextHigher == .expanded)
         #expect(BottomPanelPosition.expanded.nextLower == .intermediate)
         #expect(BottomPanelPosition.intermediate.nextLower == .island)
+    }
+
+    @Test
+    func activeSearchExpandsIntermediateDetentOnly() {
+        #expect(
+            BottomPanelPosition.intermediate.expandedForActiveSearch(
+                isFocused: true,
+                queryText: ""
+            ) == .expanded
+        )
+        #expect(
+            BottomPanelPosition.intermediate.expandedForActiveSearch(
+                isFocused: false,
+                queryText: "berlin"
+            ) == .expanded
+        )
+        #expect(
+            BottomPanelPosition.intermediate.expandedForActiveSearch(
+                isFocused: false,
+                queryText: "   "
+            ) == nil
+        )
+        #expect(
+            BottomPanelPosition.island.expandedForActiveSearch(
+                isFocused: true,
+                queryText: "berlin"
+            ) == nil
+        )
+        #expect(
+            BottomPanelPosition.expanded.expandedForActiveSearch(
+                isFocused: true,
+                queryText: "berlin"
+            ) == nil
+        )
     }
 
     @Test
@@ -143,7 +177,7 @@ struct BottomPanelStateTests {
         #expect(islandDetents.expandedHeight == 852 - 59 + 16)
         #expect(islandDetents.topMargin == 59 - 16)
         #expect(islandDetents.intermediateHeight == 852 * 0.50)
-        #expect(islandDetents.islandHeight == 154)
+        #expect(islandDetents.islandHeight == 218)
         #expect(islandDetents.intermediateHeight < islandDetents.expandedHeight)
     }
 
@@ -194,6 +228,10 @@ struct BottomPanelStateTests {
 
         state.handlePrimaryAction()
         #expect(state == .disconnected)
+
+        state = .failed(message: "Test")
+        state.handlePrimaryAction()
+        #expect(state == .connecting)
     }
 }
 

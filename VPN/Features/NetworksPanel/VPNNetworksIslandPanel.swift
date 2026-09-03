@@ -10,18 +10,35 @@ private struct NetworksScrollOffsetKey: PreferenceKey {
 
 /// Multi-provider panel: one Connect button in island mode, Networks + Locations
 /// when expanded. Mirrors the island drag/scroll mechanics from `VPNIslandPanel`.
+private struct ProviderDetailRoute: Identifiable {
+    let id: UUID
+}
+
 struct VPNNetworksIslandPanel: View {
-    let providers: [VPNProvider]
+    @Bindable var providerStore: VPNProviderStore
 
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
     @Binding var locationSelection: VPNLocationSelection
+    @Binding var selectionSource: VPNSelectionSource
     @Binding var resolvedConnection: VPNResolvedConnection?
+    @Binding var isSwitchingServer: Bool
     @Binding var isPanelInteracting: Bool
+    @Binding var showsRoutingSettings: Bool
+    @Binding var connectedAt: Date?
+    @Binding var shouldAutoConnect: Bool
+
+    let mockPublicIP: String
+    let downloadRate: String
+    let uploadRate: String
+    let sessionDurationText: String
+    var onShowConnectionInfo: (() -> Void)?
 
     let safeAreaBottom: CGFloat
     let safeAreaTop: CGFloat
+
+    private var providers: [VPNProvider] { providerStore.providers }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -39,7 +56,18 @@ struct VPNNetworksIslandPanel: View {
     @State private var isFindingBest = false
     @State private var query = VPNLocationQuery()
     @State private var showsDeleteConfirmation = false
-    @State private var detailProvider: VPNProvider?
+    @State private var pendingReconnectSelection: VPNLocationSelection?
+    @State private var showsReconnectConfirmation = false
+    @State private var detailProviderID: ProviderDetailRoute?
+    @State private var showsInfoSheet = false
+    @State private var showsSupportSheet = false
+    @State private var showsEditSheet = false
+    @State private var editProviderID: UUID?
+    @State private var updateToastMessage: String?
+    @State private var pingResults: [String: Int] = [:]
+    @State private var pingingIDs: Set<String> = []
+    @State private var isRefreshingPing = false
+    @State private var recentLocations: [VPNRecentLocationEntry] = []
     @FocusState private var searchIsFocused: Bool
 
     var body: some View {
@@ -109,10 +137,49 @@ struct VPNNetworksIslandPanel: View {
                 isCollapsingFromScroll = false
             }
         }
-        .sheet(item: $detailProvider) { provider in
-            VPNProviderDetailView(provider: provider)
+        .onChange(of: searchIsFocused) { _, focused in
+            expandPanelForSearchIfNeeded(isFocused: focused)
+        }
+        .onChange(of: query.text) { _, _ in
+            expandPanelForSearchIfNeeded(isFocused: searchIsFocused)
+        }
+        .onChange(of: shouldAutoConnect) { _, value in
+            guard value else { return }
+            shouldAutoConnect = false
+            handleConnectionTap()
+        }
+        .onAppear {
+            recentLocations = VPNRecentLocationsStore.load()
+        }
+        .sheet(item: $detailProviderID) { route in
+            VPNProviderDetailView(providerStore: providerStore, providerID: route.id)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showsInfoSheet) {
+            VPNConnectionInfoView(
+                resolvedConnection: resolvedConnection,
+                connectedAt: connectedAt,
+                mockPublicIP: mockPublicIP
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showsSupportSheet) {
+            VPNSupportView(providerName: menuContextProvider?.name)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showsEditSheet) {
+            if let editProviderID {
+                VPNProviderEditView(providerStore: providerStore, providerID: editProviderID)
+            }
+        }
+        .alert("Subscriptions updated", isPresented: Binding(
+            get: { updateToastMessage != nil },
+            set: { if !$0 { updateToastMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(updateToastMessage ?? "")
         }
         .confirmationDialog(
             "Delete this configuration?",
@@ -120,13 +187,49 @@ struct VPNNetworksIslandPanel: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                connectionState = .disconnected
-                resolvedConnection = nil
+                deletePendingProvider()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The prototype keeps the demo configuration, so nothing is removed.")
+            if let provider = providerStore.providerPendingDeletion(from: resolvedConnection) {
+                Text("\(provider.name) will be removed from Networks and Smart-Auto.")
+            }
         }
+        .confirmationDialog(
+            "Switch server?",
+            isPresented: $showsReconnectConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reconnect") {
+                applyPendingReconnect()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingReconnectSelection = nil
+            }
+        } message: {
+            Text("You are connected. Changing location will reconnect using the new selection.")
+        }
+    }
+
+    private func deletePendingProvider() {
+        guard let provider = providerStore.providerPendingDeletion(from: resolvedConnection) else { return }
+
+        if resolvedConnection?.provider.id == provider.id {
+            connectionState = .disconnected
+            resolvedConnection = nil
+        }
+
+        providerStore.remove(id: provider.id)
+    }
+
+    private func applyPendingReconnect() {
+        guard let pendingReconnectSelection else { return }
+        locationSelection = pendingReconnectSelection
+        self.pendingReconnectSelection = nil
+        resolvedConnection = nil
+        collapseToIsland()
+        isSwitchingServer = true
+        handleConnectionTap()
     }
 
     @ViewBuilder
@@ -167,19 +270,11 @@ struct VPNNetworksIslandPanel: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 connectionButton
-                if let subtitle = collapsedSubtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.horizontal, 8)
-                }
             }
             .padding(.horizontal, 16)
-            .padding(.top, panelChromeHeight + 12)
+            .padding(.top, panelChromeHeight + 8)
             .opacity(layout.collapsedContentOpacity)
             .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
         }
@@ -208,17 +303,55 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var panelChromeHeight: CGFloat {
-        BottomPanelDetents.expandedGripBandHeight + 44
+        let headerHeight = BottomPanelDetents.expandedGripBandHeight + 44
+        guard connectionState == .connected else { return headerHeight }
+        return headerHeight + 58
     }
 
-    private var collapsedSubtitle: String? {
-        if connectionState == .connected, let resolvedConnection {
-            return resolvedConnection.summarySubtitle
+    @ViewBuilder
+    private var connectionStatsStrip: some View {
+        if connectionState == .connected {
+            ConnectionStatsStrip(
+                mockPublicIP: mockPublicIP,
+                regionLabel: statsRegionLabel,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                durationText: sessionDurationText,
+                onTap: onShowConnectionInfo ?? { showsInfoSheet = true }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
-        if case let .smart(preset) = locationSelection, connectionState == .disconnected {
-            return "\(preset.title) · \(VPNConnectionPlanner.qualityLabel(for: preset, providers: providers))"
+    }
+
+    private var statsRegionLabel: String {
+        resolvedConnection?.location.name ?? selectedLocation.name
+    }
+
+    private func connectWithMenuChoice(_ choice: VPNUseCaseMenuChoice) {
+        selectionSource = .useCase(choice)
+        connectWithSelection(choice.locationSelection(scope: providerStore.providerScope))
+    }
+
+    private func connectWithJob(_ job: VPNUserJob) {
+        if job == .whitelistForeign {
+            VPNRoutingPreferences.bypassLocalNetworks = true
         }
-        return nil
+        connectWithSelection(.smartJob(job, scope: providerStore.providerScope))
+    }
+
+    private func connectWithSelection(_ newSelection: VPNLocationSelection) {
+        if connectionState == .connected {
+            if newSelection == locationSelection { return }
+            pendingReconnectSelection = newSelection
+            showsReconnectConfirmation = true
+            return
+        }
+
+        locationSelection = newSelection
+        collapseToIsland()
+        handleConnectionTap()
     }
 
     private func panelTopBar(detents: BottomPanelDetents) -> some View {
@@ -248,19 +381,38 @@ struct VPNNetworksIslandPanel: View {
                 )
             }
             .frame(height: 44)
+
+            connectionStatsStrip
         }
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
 
     private var networksPanelHeader: some View {
         HStack(spacing: 10) {
-            Text("Networks & locations")
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+            if position == .island {
+                ConnectionStatusLabels(
+                    connectionState: connectionState,
+                    homeFormat: .networksAndLocations,
+                    selectedLocation: selectedLocation,
+                    locationSelection: locationSelection,
+                    providers: providers,
+                    resolvedConnection: resolvedConnection,
+                    isSwitchingServer: isSwitchingServer,
+                    onTap: { showsInfoSheet = true }
+                )
+            } else {
+                Text("Networks & locations")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            VPNConfigOptionsMenu(showsDeleteConfirmation: $showsDeleteConfirmation) {
-                headerIcon("ellipsis")
+                VPNConfigOptionsMenu(
+                    showsDeleteConfirmation: $showsDeleteConfirmation,
+                    onAction: handleConfigMenuAction
+                ) {
+                    headerIcon("ellipsis")
+                }
             }
 
             Button {
@@ -270,10 +422,12 @@ struct VPNNetworksIslandPanel: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(PressScaleButtonStyle())
+            .fixedSize()
             .accessibilityLabel(position == .island ? "Expand panel" : "Collapse panel")
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 4)
+        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
 
     private func headerIcon(_ systemName: String) -> some View {
@@ -323,6 +477,7 @@ struct VPNNetworksIslandPanel: View {
                     )
                 )
             }
+            .background(VelvetTheme.sheetCanvas)
             .panelScrollEdgeBar(scrollEdgeProgress: scrollEdgeProgress) {
                 panelTopBar(detents: detents)
             }
@@ -349,272 +504,61 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var networksAndLocationsContent: some View {
-        VStack(spacing: 16) {
-            networksCard
-            locationsCard
+        VStack(alignment: .leading, spacing: 16) {
+            paddedSection {
+                networksCard
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                paddedSection {
+                    VPNPanelSectionHeader(title: "Use cases")
+                }
+                useCaseCardsCard
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                paddedSection {
+                    VPNPanelSectionHeader(title: "All locations")
+                    allLocationsCard
+                }
+            }
         }
-        .padding(.horizontal, 16)
         .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func paddedSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 16)
     }
 
     private var networksCard: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
-                Button {
-                    detailProvider = provider
-                } label: {
-                    providerRow(provider)
-                }
-                .buttonStyle(.plain)
-
-                if index < providers.count - 1 {
-                    Divider().padding(.leading, 58)
-                }
-            }
-        }
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-    }
-
-    private func providerRow(_ provider: VPNProvider) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(providerAccent(provider).opacity(0.14))
-                Image(systemName: provider.iconSymbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(providerAccent(provider))
-            }
-            .frame(width: 40, height: 40)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(provider.name)
-                        .foregroundStyle(.primary)
-                    if provider.kind == .velvetFeatured {
-                        Text("Featured")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(VelvetTheme.accent)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(VelvetTheme.accent.opacity(0.12), in: Capsule())
-                    }
-                }
-                Text(provider.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(provider.status == .expired ? .red : .secondary)
-            }
-            .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            if provider.status == .expired {
-                Text("!")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 20, height: 20)
-                    .background(Color.red, in: Circle())
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-    }
-
-    private func providerAccent(_ provider: VPNProvider) -> Color {
-        provider.kind == .velvetFeatured ? VelvetTheme.accent : Color.blue
-    }
-
-    private var locationsCard: some View {
-        VStack(spacing: 10) {
-            smartPresetsSection
-
-            if !query.isDefault && !isDraggingPanel {
-                activeFilterChips
-            }
-
-            serverListSection
-        }
-        .padding(.vertical, 12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-    }
-
-    private var smartPresetsSection: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(VPNSmartPreset.allCases.enumerated()), id: \.element.id) { index, preset in
-                Button {
-                    selectSmartPreset(preset)
-                } label: {
-                    smartPresetRow(preset)
-                }
-                .buttonStyle(.plain)
-
-                if index < VPNSmartPreset.allCases.count - 1 {
-                    Divider().padding(.leading, 58)
-                }
-            }
+        VPNCompactNetworksCard(providerStore: providerStore) { providerID in
+            detailProviderID = ProviderDetailRoute(id: providerID)
         }
     }
 
-    private func smartPresetRow(_ preset: VPNSmartPreset) -> some View {
-        let isSelected = locationSelection == .smart(preset)
-        let quality = VPNConnectionPlanner.qualityLabel(for: preset, providers: providers)
-
-        return HStack(spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(VelvetTheme.accent)
-                .frame(width: 30)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(preset.title)
-                    .foregroundStyle(.primary)
-                Text(preset.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(VelvetTheme.accent)
-            }
-
-            Text(quality)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(qualityColor(quality))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
+    private var useCaseCardsCard: some View {
+        VPNUseCaseCardsCard(
+            locationSelection: locationSelection,
+            selectionSource: selectionSource,
+            scope: providerStore.providerScope,
+            onUseCaseConnect: connectWithMenuChoice
+        )
     }
 
-    private func qualityColor(_ quality: String) -> Color {
-        switch quality {
-        case "Best": .green
-        case "Good": .yellow
-        default: .secondary
-        }
-    }
-
-    private var activeFilterChips: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(query.activeChips) { chip in
-                    Button {
-                        query.clear(chip)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(chip.title)
-                            Image(systemName: "xmark")
-                                .font(.caption2.weight(.bold))
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(VelvetTheme.accent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(VelvetTheme.accent.opacity(0.14), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private var serverListSection: some View {
-        VStack(spacing: 0) {
-            let results = filteredNetworkLocations
-
-            if results.isEmpty {
-                Text("No servers found")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-            } else {
-                ForEach(Array(results.enumerated()), id: \.element.id) { index, networkLocation in
-                    Button {
-                        selectManualLocation(networkLocation)
-                    } label: {
-                        serverRow(networkLocation)
-                    }
-                    .buttonStyle(.plain)
-
-                    if index < results.count - 1 {
-                        Divider().padding(.leading, 58)
-                    }
-                }
-            }
-        }
-    }
-
-    private var filteredNetworkLocations: [VPNNetworkLocation] {
-        let merged = VPNConnectionPlanner.mergedLocations(from: providers.filter(\.isEligibleForAutoConnect))
-        let trimmedQuery = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return merged
-            .filter { networkLocation in
-                guard query.filter.accepts(networkLocation.location) else { return false }
-                guard !query.fastOnly || networkLocation.location.ping < VPNLocation.fastPingThreshold else {
-                    return false
-                }
-                guard !trimmedQuery.isEmpty else { return true }
-                return networkLocation.location.searchText.localizedCaseInsensitiveContains(trimmedQuery)
-            }
-            .sorted { lhs, rhs in
-                switch query.sort {
-                case .fastest:
-                    lhs.location.ping < rhs.location.ping
-                case .country:
-                    lhs.location.name.localizedCompare(rhs.location.name) == .orderedAscending
-                }
-            }
-    }
-
-    private func serverRow(_ networkLocation: VPNNetworkLocation) -> some View {
-        let isSelected = if case let .manual(location, providerID) = locationSelection {
-            location.id == networkLocation.location.id && providerID == networkLocation.provider.id
-        } else {
-            false
-        }
-
-        return HStack(spacing: 12) {
-            Text(networkLocation.location.flag)
-                .font(.title3)
-                .frame(width: 30)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(networkLocation.location.name)
-                    .foregroundStyle(.primary)
-                Text("\(networkLocation.location.subtitle) · \(networkLocation.provider.name)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(VelvetTheme.accent)
-            } else {
-                Text(networkLocation.location.pingLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
+    private var allLocationsCard: some View {
+        VPNAllLocationsCard(
+            providerStore: providerStore,
+            locationSelection: $locationSelection,
+            selectionSource: $selectionSource,
+            query: $query,
+            pingResults: pingResults,
+            pingingIDs: pingingIDs,
+            isDraggingPanel: isDraggingPanel,
+            onSmartLocation: connectSmartLocation,
+            onManualLocation: connectManualLocation
+        )
     }
 
     private var connectionButton: some View {
@@ -636,8 +580,19 @@ struct VPNNetworksIslandPanel: View {
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
+        .tint(connectionButtonTint)
         .disabled(connectionState == .connecting)
+    }
+
+    private var connectionButtonTint: Color {
+        switch connectionState {
+        case .connected:
+            .green
+        case .failed:
+            .red
+        default:
+            VelvetTheme.accent
+        }
     }
 
     private var connectionButtonTitle: String {
@@ -645,24 +600,88 @@ struct VPNNetworksIslandPanel: View {
         case .disconnected:
             "Connect"
         case .connecting:
-            isFindingBest ? "Finding best connection…" : "Connecting…"
+            if isSwitchingServer {
+                "Switching server…"
+            } else {
+                isFindingBest ? "Finding best connection…" : "Connecting…"
+            }
         case .connected:
             "Connected"
+        case .failed:
+            "Retry"
         }
     }
 
-    private func selectSmartPreset(_ preset: VPNSmartPreset) {
-        locationSelection = .smart(preset)
-        collapseToIsland()
-    }
-
-    private func selectManualLocation(_ networkLocation: VPNNetworkLocation) {
-        locationSelection = .manual(
+    private func connectManualLocation(_ networkLocation: VPNNetworkLocation) {
+        VPNRecentLocationsStore.record(networkLocation)
+        recentLocations = VPNRecentLocationsStore.load()
+        let selection = VPNLocationSelection.manual(
             location: networkLocation.location,
             providerID: networkLocation.provider.id
         )
         selectedLocation = networkLocation.location
-        collapseToIsland()
+        selectionSource = .location(selection)
+        connectWithSelection(selection)
+    }
+
+    private func connectSmartLocation(_ job: VPNUserJob) {
+        let selection = VPNLocationSelection.smartJob(job, scope: providerStore.providerScope)
+        selectionSource = .location(selection)
+        connectWithSelection(selection)
+    }
+
+    private var menuContextProvider: VPNProvider? {
+        resolvedConnection?.provider
+            ?? providers.first(where: \.isEligibleForAutoConnect)
+            ?? providers.first
+    }
+
+    private func handleConfigMenuAction(_ action: VPNConfigMenuAction) {
+        switch action {
+        case .info:
+            showsInfoSheet = true
+        case .support:
+            showsSupportSheet = true
+        case .routing:
+            showsRoutingSettings = true
+        case .updateSubscription:
+            Task {
+                let count = await providerStore.refreshAllActiveSubscriptions()
+                updateToastMessage = count == 0
+                    ? "No active subscriptions to update."
+                    : "Updated \(count) active subscriptions."
+            }
+        case .checkPing:
+            runInlinePingCheck()
+        case .edit:
+            if let provider = menuContextProvider {
+                editProviderID = provider.id
+                showsEditSheet = true
+            }
+        }
+    }
+
+    private func runInlinePingCheck() {
+        guard !isRefreshingPing else { return }
+        isRefreshingPing = true
+        pingResults = [:]
+
+        let entries = VPNConnectionPlanner.inlinePingEntries(
+            providers: providers,
+            scope: providerStore.providerScope,
+            query: query
+        )
+        pingingIDs = Set(entries.map(\.id))
+
+        Task { @MainActor in
+            for entry in entries {
+                try? await Task.sleep(for: .milliseconds(120))
+                pingResults[entry.id] = entry.ping
+                pingingIDs.remove(entry.id)
+            }
+            isRefreshingPing = false
+            VPNLogsStore.shared.append("Ping check completed (\(entries.count) servers)")
+        }
     }
 
     private func collapseToIsland() {
@@ -676,22 +695,52 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private func handleConnectionTap() {
-        if connectionState == .connected {
+        if connectionState == .connected, !isSwitchingServer {
             withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
                 connectionState = .disconnected
                 resolvedConnection = nil
+                connectedAt = nil
+            }
+            VPNLogsStore.shared.append("Disconnected")
+            return
+        }
+
+        if case .failed = connectionState {
+            isSwitchingServer = false
+        }
+
+        let eligibleProviders = providers.filter(\.isEligibleForAutoConnect)
+        if eligibleProviders.isEmpty {
+            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+                connectionState = .failed(message: "No active subscriptions")
+                isSwitchingServer = false
             }
             return
         }
 
         withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
             connectionState = .connecting
-            isFindingBest = true
+            isFindingBest = !isSwitchingServer
         }
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(900))
             guard connectionState == .connecting else { return }
+
+#if DEBUG
+            let shouldFail = CommandLine.arguments.contains("--connect-fail")
+#else
+            let shouldFail = false
+#endif
+
+            if shouldFail || VPNConnectionPlanner.resolve(providers: providers, selection: locationSelection) == nil {
+                isFindingBest = false
+                isSwitchingServer = false
+                withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+                    connectionState = .failed(message: "Check subscriptions or try manual")
+                }
+                return
+            }
 
             if let resolved = VPNConnectionPlanner.resolve(providers: providers, selection: locationSelection) {
                 resolvedConnection = resolved
@@ -705,6 +754,8 @@ struct VPNNetworksIslandPanel: View {
 
             withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
+                isSwitchingServer = false
+                connectedAt = connectedAt ?? .now
             }
         }
     }
@@ -822,6 +873,20 @@ struct VPNNetworksIslandPanel: View {
             isScrollAtTop = true
             isCollapsingFromScroll = false
             isDraggingPanel = false
+        }
+        schedulePositionAnimationEnd()
+    }
+
+    private func expandPanelForSearchIfNeeded(isFocused: Bool) {
+        guard let target = position.expandedForActiveSearch(
+            isFocused: isFocused,
+            queryText: query.text
+        ) else { return }
+
+        isPositionAnimating = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = target
+            dragTranslation = 0
         }
         schedulePositionAnimationEnd()
     }
