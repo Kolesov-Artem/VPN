@@ -1,5 +1,13 @@
 import SwiftUI
 
+private struct SafeAreaBottomPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = VelvetTheme.minimumBottomMargin
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 enum VPNPanelPresentation {
     static let island = PresentationDetent.height(154)
     static let intermediate = PresentationDetent.fraction(0.56)
@@ -18,6 +26,7 @@ struct VPNBottomPanel: View {
     @State private var expandedCountries = Set<String>()
     @State private var favouritesExpanded = true
     @State private var showsDeleteConfirmation = false
+    @State private var safeAreaBottom = VelvetTheme.minimumBottomMargin
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +51,25 @@ struct VPNBottomPanel: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
             .clipped()
+        }
+        .panelLocationSearchDock(
+            revealProgress: showsLocations ? 1 : 0,
+            query: $query,
+            isFocused: $searchIsFocused,
+            bottomMargin: LocationSearchChrome.screenBottomOffset(panelBottomMargin: safeAreaBottom),
+            safeAreaBottom: safeAreaBottom
+        )
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .preference(
+                        key: SafeAreaBottomPreferenceKey.self,
+                        value: geometry.safeAreaInsets.bottom
+                    )
+            }
+        }
+        .onPreferenceChange(SafeAreaBottomPreferenceKey.self) { value in
+            safeAreaBottom = max(value, VelvetTheme.minimumBottomMargin)
         }
         .sensoryFeedback(.selection, trigger: position)
         .onChange(of: position) { _, newValue in
@@ -184,10 +212,6 @@ struct VPNBottomPanel: View {
 
     private var locationsList: some View {
         List {
-            searchRow
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-
             if !query.isDefault {
                 activeFilterChips
                     .listRowSeparator(.hidden)
@@ -209,89 +233,21 @@ struct VPNBottomPanel: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .contentMargins(.top, 4, for: .scrollContent)
+        .contentMargins(
+            .bottom,
+            showsLocations
+                ? LocationSearchChrome.barHeight(
+                    bottomMargin: LocationSearchChrome.screenBottomOffset(
+                        panelBottomMargin: safeAreaBottom
+                    )
+                )
+                : 0,
+            for: .scrollContent
+        )
         .textCase(nil)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.defaultMinListRowHeight, 44)
         .animation(VelvetMotion.queryChange(reduceMotion: reduceMotion), value: query)
-    }
-
-    private var searchRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-
-                TextField("Country, city or type", text: $query.text)
-                    .focused($searchIsFocused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-
-                if !query.text.isEmpty {
-                    Button {
-                        query.text = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color(.tertiarySystemFill), in: Capsule())
-
-            filterMenu
-        }
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Section("Server type") {
-                Picker("Server type", selection: $query.filter) {
-                    ForEach(VPNLocationFilter.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section("Sort by") {
-                Picker("Sort by", selection: $query.sort) {
-                    ForEach(VPNLocationSort.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section {
-                Toggle(isOn: $query.fastOnly) {
-                    Label("Under \(VPNLocation.fastPingThreshold) ms", systemImage: "bolt.fill")
-                }
-
-                if !query.isDefault {
-                    Button(role: .destructive) {
-                        query.resetFilters()
-                    } label: {
-                        Label("Reset filters", systemImage: "arrow.counterclockwise")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(query.isDefault ? Color.primary : Color.white)
-                .frame(width: 36, height: 36)
-                .background(
-                    query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent,
-                    in: Circle()
-                )
-        }
-        .accessibilityLabel("Filter and sort servers")
     }
 
     private var activeFilterChips: some View {

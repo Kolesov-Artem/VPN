@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Compact title row shown as scrolling content passes beneath the pinned bar.
 struct ExpandedSheetCompactBar: View {
+    var title: String = "Velvet VPN"
     let scrollEdgeProgress: CGFloat
     let onCollapse: () -> Void
 
@@ -11,7 +12,7 @@ struct ExpandedSheetCompactBar: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(VelvetTheme.accent)
 
-            Text("Velvet VPN")
+            Text(title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
 

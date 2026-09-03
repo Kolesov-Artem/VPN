@@ -52,6 +52,14 @@ struct VPNIslandPanel: View {
             )
             let panelInteracting = isDraggingPanel || isCollapsingFromScroll || isPositionAnimating
             let expandedTopInset = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
+            let searchRevealProgress = locationSearchRevealProgress(layout: layout)
+            let searchScreenOffset = LocationSearchChrome.screenBottomOffset(
+                panelBottomMargin: detents.bottomMargin
+            )
+            let viewportHeight = min(
+                proxy.size.height,
+                max(0, UIScreen.main.bounds.maxY - proxy.frame(in: .global).minY)
+            )
 
             Color.clear
                 .allowsHitTesting(false)
@@ -62,6 +70,25 @@ struct VPNIslandPanel: View {
                         expandedTopInset: expandedTopInset
                     )
                 }
+                .overlay(alignment: .top) {
+                    Color.clear
+                        .frame(
+                            width: proxy.size.width,
+                            height: viewportHeight
+                        )
+                        .overlay(alignment: .bottom) {
+                            if searchRevealProgress > 0.01 {
+                                PanelLocationSearchControls(
+                                    query: $query,
+                                    isFocused: $searchIsFocused,
+                                    bottomMargin: searchScreenOffset,
+                                    safeAreaBottom: detents.bottomMargin
+                                )
+                                .opacity(searchRevealProgress)
+                                .allowsHitTesting(searchRevealProgress > 0.35)
+                            }
+                        }
+                    }
                 .onChange(of: panelInteracting) { _, interacting in
                     isPanelInteracting = interacting
                 }
@@ -119,23 +146,25 @@ struct VPNIslandPanel: View {
         expandedTopInset: CGFloat
     ) -> some View {
         let shape = panelShape(layout: layout)
+        let searchRevealProgress = locationSearchRevealProgress(layout: layout)
+        let searchScreenOffset = LocationSearchChrome.screenBottomOffset(
+            panelBottomMargin: detents.bottomMargin
+        )
 
-        return VStack(spacing: 0) {
-            ZStack(alignment: .top) {
-                locationsScrollBody(
-                    detents: detents,
-                    layout: layout
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-                connectionButton
-                    .padding(.horizontal, 16)
-                    .padding(.top, panelChromeHeight + 16)
-                    .opacity(layout.collapsedContentOpacity)
-                    .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
-            }
+        return ZStack(alignment: .top) {
+            locationsScrollBody(
+                detents: detents,
+                layout: layout,
+                searchRevealProgress: searchRevealProgress,
+                searchScreenOffset: searchScreenOffset
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .clipped()
+
+            connectionButton
+                .padding(.horizontal, 16)
+                .padding(.top, panelChromeHeight + 16)
+                .opacity(layout.collapsedContentOpacity)
+                .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
         }
         .frame(height: layout.panelHeight, alignment: .top)
         .frame(maxWidth: .infinity)
@@ -160,6 +189,16 @@ struct VPNIslandPanel: View {
 
     private var panelChromeHeight: CGFloat {
         BottomPanelDetents.expandedGripBandHeight + 44
+    }
+
+    /// Keeps search pinned at full opacity in expanded and intermediate detents.
+    private func locationSearchRevealProgress(layout: BottomPanelVisualState) -> CGFloat {
+        switch position {
+        case .expanded, .intermediate:
+            1
+        case .island:
+            layout.listProgress
+        }
     }
 
     /// One pinned bar is shared by every detent. On iOS 26 `safeAreaBar`
@@ -195,7 +234,9 @@ struct VPNIslandPanel: View {
     /// list never remounts when snapping between detents.
     private func locationsScrollBody(
         detents: BottomPanelDetents,
-        layout: BottomPanelVisualState
+        layout: BottomPanelVisualState,
+        searchRevealProgress: CGFloat,
+        searchScreenOffset: CGFloat
     ) -> some View {
         let isExpanded = position == .expanded
         let canScroll = isExpanded && !isPositionAnimating && !isCollapsingFromScroll
@@ -218,9 +259,17 @@ struct VPNIslandPanel: View {
                     .allowsHitTesting(layout.listProgress > 0.5)
                     .padding(.top, 12)
                 }
-                .padding(.bottom, detents.contentBottomInset)
+                .padding(
+                    .bottom,
+                    LocationSearchChrome.scrollBottomPadding(
+                        revealProgress: searchRevealProgress,
+                        bottomMargin: searchScreenOffset,
+                        contentInset: detents.contentBottomInset
+                    )
+                )
                 .animation(nil, value: dragTranslation)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .panelScrollEdgeBar(scrollEdgeProgress: scrollEdgeProgress) {
                 panelTopBar(detents: detents)
             }
@@ -228,8 +277,6 @@ struct VPNIslandPanel: View {
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { minY in
                 updateScrollAtTop(chromeMinY: minY)
             }
-            // Enabling UIScrollView while the detent spring is still running
-            // makes it recalculate its content geometry mid-transition.
             .scrollDisabled(!canScroll)
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
@@ -424,8 +471,6 @@ struct VPNIslandPanel: View {
         embedListInScrollView: Bool
     ) -> some View {
         VStack(spacing: 10) {
-            searchRow
-
             if !query.isDefault && !isDraggingPanel {
                 activeFilterChips
                     .transition(VelvetMotion.filterChip(reduceMotion: reduceMotion))
@@ -494,88 +539,6 @@ struct VPNIslandPanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 2)
         .padding(.bottom, usesNestedScroll ? detents.contentBottomInset : 0)
-    }
-
-    /// Search and filtering share a single row: the field stretches, and every
-    /// secondary control lives behind the trailing menu so the default state
-    /// spends no vertical space on chrome.
-    private var searchRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-
-                TextField("Country, city or type", text: $query.text)
-                    .focused($searchIsFocused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-
-                if !query.text.isEmpty {
-                    Button {
-                        query.text = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                }
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color(.tertiarySystemFill), in: Capsule())
-
-            filterMenu
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Section("Server type") {
-                Picker("Server type", selection: $query.filter) {
-                    ForEach(VPNLocationFilter.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section("Sort by") {
-                Picker("Sort by", selection: $query.sort) {
-                    ForEach(VPNLocationSort.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section {
-                Toggle(isOn: $query.fastOnly) {
-                    Label("Under \(VPNLocation.fastPingThreshold) ms", systemImage: "bolt.fill")
-                }
-
-                if !query.isDefault {
-                    Button(role: .destructive) {
-                        query.resetFilters()
-                    } label: {
-                        Label("Reset filters", systemImage: "arrow.counterclockwise")
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(query.isDefault ? Color.primary : Color.white)
-                .frame(width: 36, height: 36)
-                .background(
-                    query.isDefault ? Color(.tertiarySystemFill) : VelvetTheme.accent,
-                    in: Circle()
-                )
-        }
-        .accessibilityLabel("Filter and sort servers")
     }
 
     private var activeFilterChips: some View {
@@ -785,6 +748,9 @@ struct VPNIslandPanel: View {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 guard position != .expanded else { return }
+                if !isDraggingPanel {
+                    searchIsFocused = false
+                }
                 isDraggingPanel = true
                 dragTranslation = value.translation.height
             }

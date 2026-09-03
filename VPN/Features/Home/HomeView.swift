@@ -1,22 +1,5 @@
 import SwiftUI
 
-/// Two shipped takes on the bottom panel. The island is the original
-/// hand-built one; the sheet is the system presentation that hands scrolling
-/// over to UIKit. Both stay in the build so they can be compared on device.
-enum VPNPanelStyle: String, CaseIterable, Identifiable {
-    case island
-    case sheet
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .island: "Floating island"
-        case .sheet: "System sheet"
-        }
-    }
-}
-
 struct HomeView: View {
     @Binding var route: AppRoute
 
@@ -26,15 +9,16 @@ struct HomeView: View {
     @State private var panelPosition = BottomPanelPosition.island
     @State private var connectionState = VPNConnectionState.disconnected
     @State private var selectedLocation = VPNLocation.samples[0]
+    @State private var locationSelection: VPNLocationSelection = .smart(.auto)
+    @State private var resolvedConnection: VPNResolvedConnection?
     @State private var showsSettings = false
     @State private var isPanelInteracting = false
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
+    @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
 
     init(route: Binding<AppRoute>) {
         _route = route
 #if DEBUG
-        // Seeding the store rather than the state keeps the launch flag and the
-        // settings picker reading from the same place.
         if CommandLine.arguments.contains("--panel-sheet") {
             UserDefaults.standard.set(VPNPanelStyle.sheet.rawValue, forKey: "velvet.panelStyle")
         } else if CommandLine.arguments.contains("--panel-island") {
@@ -56,17 +40,44 @@ struct HomeView: View {
     }
 
     var body: some View {
-        switch panelStyle {
-        case .island:
-            islandLayout
-        case .sheet:
-            sheetLayout
+        Group {
+            if homeFormat == .networksAndLocations {
+                networksIslandLayout
+            } else {
+                switch panelStyle {
+                case .island:
+                    islandLayout
+                case .sheet:
+                    sheetLayout
+                }
+            }
+        }
+        .id(homeFormat)
+        .sheet(isPresented: $showsSettings) {
+            settingsSheet
+        }
+        .onChange(of: homeFormat) { _, _ in
+            panelPosition = .island
+            resolvedConnection = nil
         }
     }
 
-    /// Variant A: the panel lives in the same stack as the map, so it can float
-    /// inset from the edges. Settings present from here because nothing else
-    /// is on screen.
+    private var networksIslandLayout: some View {
+        mapLayer { safeAreaBottom, safeAreaTop, _ in
+            VPNNetworksIslandPanel(
+                providers: VPNProvider.samples,
+                position: $panelPosition,
+                connectionState: $connectionState,
+                selectedLocation: $selectedLocation,
+                locationSelection: $locationSelection,
+                resolvedConnection: $resolvedConnection,
+                isPanelInteracting: $isPanelInteracting,
+                safeAreaBottom: safeAreaBottom,
+                safeAreaTop: safeAreaTop
+            )
+        }
+    }
+
     private var islandLayout: some View {
         mapLayer { safeAreaBottom, safeAreaTop, _ in
             VPNIslandPanel(
@@ -78,13 +89,8 @@ struct HomeView: View {
                 safeAreaTop: safeAreaTop
             )
         }
-        .sheet(isPresented: $showsSettings) {
-            settingsSheet
-        }
     }
 
-    /// Variant B: a system sheet owns the panel, which is what lets a swipe
-    /// resize it first and scroll the list afterwards.
     private var sheetLayout: some View {
         mapLayer { _, _, _ in EmptyView() }
             .sheet(isPresented: isHomePresented) {
@@ -115,11 +121,6 @@ struct HomeView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(VelvetTheme.panelRadius)
                 .interactiveDismissDisabled()
-                // A view controller can only present one sheet, so settings
-                // have to come from the panel rather than from the map.
-                .sheet(isPresented: $showsSettings) {
-                    settingsSheet
-                }
             }
     }
 
@@ -136,8 +137,6 @@ struct HomeView: View {
         )
     }
 
-    // The reader keeps the bottom safe area so the panel can size its margins
-    // from the real home indicator inset before ignoring it.
     private func mapLayer<Panel: View>(
         @ViewBuilder panel: @escaping (CGFloat, CGFloat, BottomPanelDetents) -> Panel
     ) -> some View {
@@ -168,10 +167,16 @@ struct HomeView: View {
                     Spacer()
 
                     if route == .home {
-                        connectionSummary
-                            .padding(.bottom, summaryPadding)
-                            .animation(VelvetMotion.easeOut(duration: 0.25), value: panelPosition)
-                            .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
+                        ConnectionSummaryView(
+                            connectionState: connectionState,
+                            homeFormat: homeFormat,
+                            selectedLocation: selectedLocation,
+                            resolvedConnection: resolvedConnection,
+                            reduceMotion: reduceMotion
+                        )
+                        .padding(.bottom, summaryPadding)
+                        .animation(VelvetMotion.easeOut(duration: 0.25), value: panelPosition)
+                        .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
                     }
                 }
                 .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
@@ -214,8 +219,8 @@ struct HomeView: View {
     }
 
     private var settingsSheet: some View {
-        SettingsView(panelStyle: $panelStyle)
-            .presentationDetents([.medium])
+        HomeSettingsView()
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
     }
 
@@ -241,8 +246,6 @@ struct HomeView: View {
         )
     }
 
-    /// Tapping the map is a shortcut, not a commitment: it moves the selection
-    /// the same way the list does and leaves connecting to the panel button.
     private func selectNearestServer(at coordinate: GeoCoordinate) {
         guard let match = VPNLocation.nearest(to: coordinate) else { return }
         guard match != selectedLocation else { return }
@@ -301,68 +304,5 @@ struct HomeView: View {
                 OnboardingContentBackdrop()
             }
             .keyboardLift()
-    }
-
-    private var connectionSummary: some View {
-        VStack(spacing: 12) {
-            Image(systemName: connectionState == .connected ? "lock.shield.fill" : "shield")
-                .font(.system(size: 48, weight: .medium))
-                .foregroundStyle(connectionState == .connected ? Color.green : Color.primary.opacity(0.72))
-                .contentTransition(.symbolEffect(.replace))
-
-            Text(connectionState == .connected ? "Protected" : "Ready to connect")
-                .font(.title3.weight(.semibold))
-
-            Label(selectedLocation.name, systemImage: "location.fill")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SettingsView: View {
-    @Binding var panelStyle: VPNPanelStyle
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var connectsAutomatically = true
-    @State private var showsNotifications = true
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Connection") {
-                    Toggle("Auto-connect", isOn: $connectsAutomatically)
-                    Toggle("Notifications", isOn: $showsNotifications)
-                }
-
-                Section {
-                    Picker("Panel", selection: $panelStyle) {
-                        ForEach(VPNPanelStyle.allCases) { style in
-                            Text(style.title).tag(style)
-                        }
-                    }
-                } header: {
-                    Text("Bottom panel")
-                } footer: {
-                    Text("The island floats above the map. The sheet expands to full screen before the country list scrolls.")
-                }
-
-                Section("Prototype") {
-                    LabeledContent("Version", value: "1.0")
-                    LabeledContent("VPN engine", value: "Demo")
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
     }
 }
