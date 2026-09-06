@@ -62,16 +62,22 @@ struct BottomPanelDetents {
     static func make(
         screenHeight: CGFloat,
         safeAreaBottom: CGFloat,
-        isAccessibilitySize: Bool
+        isAccessibilitySize: Bool,
+        showsSessionStats: Bool = false
     ) -> BottomPanelDetents {
         let expandedHeight = screenHeight * 0.92
-        let intermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.56)
-        let islandHeight: CGFloat = isAccessibilitySize ? 280 : 218
+        let rawIntermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.56)
+        let heights = orderedDetentHeights(
+            expandedHeight: expandedHeight,
+            rawIntermediateHeight: rawIntermediateHeight,
+            showsSessionStats: showsSessionStats,
+            isAccessibilitySize: isAccessibilitySize
+        )
 
         return BottomPanelDetents(
             expandedHeight: expandedHeight,
-            intermediateHeight: intermediateHeight,
-            islandHeight: islandHeight,
+            intermediateHeight: heights.intermediate,
+            islandHeight: heights.island,
             bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin),
             topMargin: 0
         )
@@ -83,20 +89,45 @@ struct BottomPanelDetents {
         screenHeight: CGFloat,
         safeAreaBottom: CGFloat,
         safeAreaTop: CGFloat,
-        isAccessibilitySize: Bool
+        isAccessibilitySize: Bool,
+        showsSessionStats: Bool = false
     ) -> BottomPanelDetents {
         let topMargin = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
         let expandedHeight = screenHeight - topMargin
-        let intermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.50)
-        let islandHeight: CGFloat = isAccessibilitySize ? 280 : 218
+        let rawIntermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.50)
+        let heights = orderedDetentHeights(
+            expandedHeight: expandedHeight,
+            rawIntermediateHeight: rawIntermediateHeight,
+            showsSessionStats: showsSessionStats,
+            isAccessibilitySize: isAccessibilitySize
+        )
 
         return BottomPanelDetents(
             expandedHeight: expandedHeight,
-            intermediateHeight: intermediateHeight,
-            islandHeight: islandHeight,
+            intermediateHeight: heights.intermediate,
+            islandHeight: heights.island,
             bottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin),
             topMargin: topMargin
         )
+    }
+
+    /// Keeps island < intermediate < expanded even when the connected island
+    /// grows taller than the nominal half-screen detent on short viewports.
+    private static func orderedDetentHeights(
+        expandedHeight: CGFloat,
+        rawIntermediateHeight: CGFloat,
+        showsSessionStats: Bool,
+        isAccessibilitySize: Bool
+    ) -> (island: CGFloat, intermediate: CGFloat) {
+        let minGap: CGFloat = 8
+        let rawIsland = VelvetCollapsedIslandLayout.islandHeight(
+            showsSessionStats: showsSessionStats,
+            isAccessibilitySize: isAccessibilitySize
+        )
+        var intermediate = max(rawIntermediateHeight, rawIsland + minGap)
+        intermediate = min(intermediate, expandedHeight - minGap)
+        let island = min(rawIsland, intermediate - minGap)
+        return (island, intermediate)
     }
 
     func summaryBottomPadding(for position: BottomPanelPosition) -> CGFloat {
@@ -184,6 +215,38 @@ enum BottomPanelInterpolator {
             shadowOpacity: shadowOpacity,
             shadowRadius: 20 + 4 * sheetMorphProgress,
             shadowY: -4 - 4 * sheetMorphProgress
+        )
+    }
+
+    /// Cheap visuals while the finger is down: height still tracks 1:1, but blur,
+    /// shadow morph, and corner interpolation are frozen until settle.
+    static func displayLayout(
+        detents: BottomPanelDetents,
+        position: BottomPanelPosition,
+        dragTranslation: CGFloat,
+        isDragLite: Bool
+    ) -> BottomPanelVisualState {
+        let layout = layout(
+            detents: detents,
+            position: position,
+            dragTranslation: dragTranslation
+        )
+        guard isDragLite else { return layout }
+
+        let sheetAnchor = position == .expanded
+        let morph: CGFloat = sheetAnchor ? 1 : 0
+        return BottomPanelVisualState(
+            panelHeight: layout.panelHeight,
+            horizontalInset: sheetAnchor ? 0 : VelvetTheme.islandHorizontalInset,
+            bottomInset: sheetAnchor ? 0 : detents.bottomMargin,
+            bottomCornerRadius: sheetAnchor ? 0 : VelvetTheme.panelRadius,
+            revealProgress: layout.revealProgress,
+            sheetMorphProgress: morph,
+            collapsedContentOpacity: layout.collapsedContentOpacity,
+            listProgress: layout.listProgress,
+            shadowOpacity: VelvetTheme.islandShadowOpacity,
+            shadowRadius: 20,
+            shadowY: -4
         )
     }
 

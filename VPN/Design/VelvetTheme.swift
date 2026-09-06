@@ -1,4 +1,17 @@
 import SwiftUI
+import UIKit
+
+extension Color {
+    /// Resolves at runtime for light and dark appearance using UIKit colors directly.
+    /// Avoids `UIColor(SwiftUI.Color)` which can trap during early app launch.
+    static func velvetAdaptive(light: UIColor, dark: UIColor) -> Color {
+        Color(
+            uiColor: UIColor { traits in
+                traits.userInterfaceStyle == .dark ? dark : light
+            }
+        )
+    }
+}
 
 enum VelvetTheme {
     static let accent = Color(
@@ -17,6 +30,34 @@ enum VelvetTheme {
         blue: 255 / 255
     )
 
+    static let connectedGreen = Color(
+        red: 0 / 255,
+        green: 178 / 255,
+        blue: 63 / 255
+    )
+
+    static let connectedTint = connectedGreen
+    static let disconnectedTint = accent
+    static let errorTint = Color(red: 255 / 255, green: 59 / 255, blue: 48 / 255)
+    static let warningTint = Color(red: 255 / 255, green: 149 / 255, blue: 0 / 255)
+    static let providerAccent = Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255)
+    static let selectionHighlightOpacity: CGFloat = 0.12
+
+    static let mainTextDark = Color.velvetAdaptive(
+        light: UIColor(red: 24 / 255, green: 8 / 255, blue: 49 / 255, alpha: 1),
+        dark: .label
+    )
+
+    static let statsStripBackground = Color.velvetAdaptive(
+        light: UIColor.systemGray.withAlphaComponent(0.12),
+        dark: UIColor.white.withAlphaComponent(0.08)
+    )
+
+    static let statsStripProgressTrack = Color.velvetAdaptive(
+        light: UIColor.systemGray.withAlphaComponent(0.2),
+        dark: UIColor.white.withAlphaComponent(0.14)
+    )
+
     static let horizontalPadding: CGFloat = 16
     static let controlRadius: CGFloat = 16
     static let panelRadius: CGFloat = 28
@@ -33,18 +74,31 @@ enum VelvetTheme {
     static let expandedShadowOpacity: CGFloat = 0.14
 
     /// Expanded sheet scroll canvas behind white content blocks.
-    static let sheetCanvas = Color(
-        red: 245 / 255,
-        green: 242 / 255,
-        blue: 252 / 255
+    static let sheetCanvas = Color.velvetAdaptive(
+        light: UIColor(red: 245 / 255, green: 242 / 255, blue: 252 / 255, alpha: 1),
+        dark: UIColor(red: 28 / 255, green: 26 / 255, blue: 36 / 255, alpha: 1)
     )
+
+    static let connectedPanelFallback = Color.velvetAdaptive(
+        light: UIColor(red: 220 / 255, green: 244 / 255, blue: 228 / 255, alpha: 1),
+        dark: UIColor(red: 22 / 255, green: 48 / 255, blue: 32 / 255, alpha: 1)
+    )
+
+    static let disconnectedPanelFallback = Color.velvetAdaptive(
+        light: UIColor(red: 232 / 255, green: 222 / 255, blue: 252 / 255, alpha: 1),
+        dark: UIColor(red: 36 / 255, green: 28 / 255, blue: 52 / 255, alpha: 1)
+    )
+
+    static var connectedTintUIColor: UIColor {
+        UIColor(red: 0 / 255, green: 178 / 255, blue: 63 / 255, alpha: 1)
+    }
+
+    static var deepPurpleUIColor: UIColor {
+        UIColor(red: 94 / 255, green: 25 / 255, blue: 226 / 255, alpha: 1)
+    }
 
     /// White surface for providers, cards, and location lists inside the sheet.
     static let contentSurface = Color(.systemBackground)
-
-    /// Bottom backdrop blur strip on the home map (Figma 316pt on 812pt canvas).
-    static let mapBottomFeatherHeight: CGFloat = 316
-    static let mapBottomFeatherHeightRatio: CGFloat = 316 / 812
 }
 
 struct VelvetBackground: View {
@@ -142,4 +196,3 @@ extension View {
         modifier(KeyboardLiftModifier())
     }
 }
-

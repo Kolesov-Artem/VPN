@@ -7,12 +7,14 @@ enum VPNConfigMenuAction {
     case updateSubscription
     case checkPing
     case edit
+    case providerSettings
 }
 
 /// Shared configuration menu. Uses the system `Menu` so presentation, separators,
 /// and spring animation match other chrome (e.g. the filter menu).
 struct VPNConfigOptionsMenu<MenuLabel: View>: View {
     @Binding var showsDeleteConfirmation: Bool
+    var showsProviderSettings = false
     var onAction: (VPNConfigMenuAction) -> Void
     @ViewBuilder var label: () -> MenuLabel
 
@@ -33,6 +35,13 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
             .controlGroupStyle(.compactMenu)
 
             Section {
+                if showsProviderSettings {
+                    Button {
+                        onAction(.providerSettings)
+                    } label: {
+                        Label("Provider settings", systemImage: "gearshape")
+                    }
+                }
                 Button {
                     onAction(.routing)
                 } label: {

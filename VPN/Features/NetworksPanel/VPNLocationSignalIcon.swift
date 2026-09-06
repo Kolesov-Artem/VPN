@@ -21,9 +21,9 @@ struct VPNLocationSignalIcon: View {
 
     private var color: Color {
         switch signal {
-        case .excellent: .green
-        case .good: .yellow
-        case .fair: .red
+        case .excellent: VelvetTheme.connectedTint
+        case .good: VelvetTheme.warningTint
+        case .fair: VelvetTheme.errorTint
         }
     }
 }

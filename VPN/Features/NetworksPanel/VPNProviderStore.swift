@@ -29,6 +29,13 @@ final class VPNProviderStore {
     var isRefreshing = false
     var providerScope: VPNProviderScope = .allNetworks
 
+    var showsProviderPicker: Bool { providers.count > 1 }
+
+    var soleProvider: VPNProvider? {
+        guard providers.count == 1 else { return nil }
+        return providers.first
+    }
+
     private var highlightTask: Task<Void, Never>?
     private var nextImportIndex = 1
 

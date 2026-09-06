@@ -40,7 +40,7 @@ struct VPNAllLocationsCard: View {
             }
         }
         .padding(.vertical, 4)
-        .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
     }
 
     private func countryRow(_ group: VPNCountryLocationGroup) -> some View {

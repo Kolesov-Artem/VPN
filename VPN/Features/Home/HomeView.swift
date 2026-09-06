@@ -24,6 +24,8 @@ struct HomeView: View {
     @State private var mockPublicIP = "185.42.18.90"
     @State private var downloadRate = "0 KB/s"
     @State private var uploadRate = "0 KB/s"
+    @State private var sessionBytesUsed: Int64 = 0
+    @State private var livePingMs = 0
     @State private var shouldAutoConnect = false
     @State private var statsTask: Task<Void, Never>?
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
@@ -91,7 +93,6 @@ struct HomeView: View {
             resolvedConnection = nil
             connectionState = .disconnected
             connectedAt = nil
-            stopStatsTicker()
         }
         .onChange(of: locationSelection) { _, selection in
             persistLocationSelection(selection)
@@ -103,6 +104,7 @@ struct HomeView: View {
                     connectedAt = .now
                 }
                 mockPublicIP = mockIP(for: resolvedConnection)
+                livePingMs = resolvedConnection?.location.ping ?? selectedLocation.ping
                 startStatsTicker()
                 VPNLogsStore.shared.append("Connected to \(resolvedConnection?.provider.name ?? "VPN")")
             case .disconnected, .failed:
@@ -134,11 +136,11 @@ struct HomeView: View {
                 showsRoutingSettings: $showsRoutingSettings,
                 connectedAt: $connectedAt,
                 shouldAutoConnect: $shouldAutoConnect,
-                mockPublicIP: mockPublicIP,
                 downloadRate: downloadRate,
                 uploadRate: uploadRate,
-                sessionDurationText: sessionDurationText,
-                onShowConnectionInfo: { showsConnectionInfo = true },
+                pingMs: livePingMs,
+                usageFraction: sessionUsageFraction,
+                sessionDataUsedText: sessionDataUsedText,
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop
             )
@@ -153,10 +155,11 @@ struct HomeView: View {
                 selectedLocation: $selectedLocation,
                 isPanelInteracting: $isPanelInteracting,
                 onShowConnectionInfo: { showsConnectionInfo = true },
-                mockPublicIP: mockPublicIP,
                 downloadRate: downloadRate,
                 uploadRate: uploadRate,
-                sessionDurationText: sessionDurationText,
+                pingMs: livePingMs,
+                usageFraction: sessionUsageFraction,
+                sessionDataUsedText: sessionDataUsedText,
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop
             )
@@ -169,12 +172,7 @@ struct HomeView: View {
                 VPNBottomPanel(
                     position: $panelPosition,
                     connectionState: $connectionState,
-                    selectedLocation: $selectedLocation,
-                    onShowConnectionInfo: { showsConnectionInfo = true },
-                    mockPublicIP: mockPublicIP,
-                    downloadRate: downloadRate,
-                    uploadRate: uploadRate,
-                    sessionDurationText: sessionDurationText
+                    selectedLocation: $selectedLocation
                 )
                 .presentationDetents(
                     [
@@ -269,7 +267,7 @@ struct HomeView: View {
             Text(message)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, VelvetTheme.horizontalPadding)
                 .padding(.vertical, 12)
                 .background(.black.opacity(0.86), in: Capsule())
                 .padding(.top, 8)
@@ -314,12 +312,6 @@ struct HomeView: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var sessionDurationText: String {
-        guard let connectedAt else { return "00:00" }
-        let interval = Int(Date.now.timeIntervalSince(connectedAt))
-        return String(format: "%02d:%02d", interval / 60, interval % 60)
-    }
-
     private func restoreLastLocationSelection() {
         guard connectLastLocation else { return }
         if let job = VPNUserJob(rawValue: defaultUserJobRaw) {
@@ -334,20 +326,36 @@ struct HomeView: View {
         }
     }
 
-    private func mockIP(for resolvedConnection: VPNResolvedConnection?) -> String {
-        guard let resolvedConnection else { return "185.42.18.90" }
-        let suffix = abs(resolvedConnection.location.ping) % 200
-        return "185.42.\(suffix).\(18 + resolvedConnection.provider.name.count % 40)"
+    private let sessionDataLimitBytes: Int64 = 7_000_000_000
+
+    private var sessionUsageFraction: Double {
+        Double(sessionBytesUsed) / Double(sessionDataLimitBytes)
+    }
+
+    private var sessionDataUsedText: String {
+        let megabytes = Double(sessionBytesUsed) / (1024 * 1024)
+        if megabytes >= 1024 {
+            return String(format: "%.1f GB this session", megabytes / 1024)
+        }
+        return String(format: "%.0f MB this session", megabytes)
     }
 
     private func startStatsTicker() {
         statsTask?.cancel()
         statsTask = Task { @MainActor in
+            let basePing = resolvedConnection?.location.ping ?? selectedLocation.ping
             while !Task.isCancelled {
+                if isPanelInteracting {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    continue
+                }
+
                 let down = Double.random(in: 8.0...24.0)
                 let up = Double.random(in: 2.0...8.0)
-                downloadRate = String(format: "%.1f MB/s", down)
-                uploadRate = String(format: "%.1f MB/s", up)
+                downloadRate = String(format: "%.0f MB/s", down)
+                uploadRate = String(format: "%.0f MB/s", up)
+                livePingMs = max(12, basePing + Int.random(in: -8...12))
+                sessionBytesUsed += Int64((down + up) * 1024 * 1024 / 8)
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -358,6 +366,14 @@ struct HomeView: View {
         statsTask = nil
         downloadRate = "0 KB/s"
         uploadRate = "0 KB/s"
+        livePingMs = 0
+        sessionBytesUsed = 0
+    }
+
+    private func mockIP(for resolvedConnection: VPNResolvedConnection?) -> String {
+        guard let resolvedConnection else { return "185.42.18.90" }
+        let suffix = abs(resolvedConnection.location.ping) % 200
+        return "185.42.\(suffix).\(18 + resolvedConnection.provider.name.count % 40)"
     }
 
     private var presentationDetent: Binding<PresentationDetent> {
@@ -405,7 +421,7 @@ struct HomeView: View {
                     Image(systemName: "plus")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
+                        .frame(width: VelvetMetrics.minTouchTarget, height: VelvetMetrics.minTouchTarget)
                         .background(.regularMaterial, in: Circle())
                 }
                 .buttonStyle(PressScaleButtonStyle())
@@ -418,7 +434,7 @@ struct HomeView: View {
                     Image(systemName: "gearshape")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
+                        .frame(width: VelvetMetrics.minTouchTarget, height: VelvetMetrics.minTouchTarget)
                         .background(.regularMaterial, in: Circle())
                 }
                 .buttonStyle(PressScaleButtonStyle())
@@ -426,7 +442,7 @@ struct HomeView: View {
                 .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, VelvetTheme.islandHorizontalInset)
         .padding(.top, 12)
         .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
     }

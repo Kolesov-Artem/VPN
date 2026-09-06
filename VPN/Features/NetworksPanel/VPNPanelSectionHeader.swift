@@ -17,6 +17,6 @@ struct VPNPanelContentSurface<Content: View>: View {
 
     var body: some View {
         content()
-            .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
     }
 }

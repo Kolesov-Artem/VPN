@@ -39,7 +39,7 @@ struct VPNInsetRow: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(VelvetTheme.accent.opacity(0.12))
+                    .fill(VelvetTheme.accent.opacity(VelvetTheme.selectionHighlightOpacity))
             }
         }
         .contentShape(Rectangle())

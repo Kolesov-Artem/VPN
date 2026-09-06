@@ -34,7 +34,7 @@ struct VPNCompactNetworksCard: View {
 
                     if needsAttention {
                         Circle()
-                            .fill(.red)
+                            .fill(VelvetTheme.errorTint)
                             .frame(width: 7, height: 7)
                     }
 
@@ -60,7 +60,7 @@ struct VPNCompactNetworksCard: View {
                 }
             }
         }
-        .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
     }
 
     private func providerRow(_ provider: VPNProvider) -> some View {
@@ -70,10 +70,11 @@ struct VPNCompactNetworksCard: View {
             HStack(spacing: 12) {
                 Image(systemName: provider.iconSymbol)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(provider.kind == .velvetFeatured ? VelvetTheme.accent : .blue)
-                    .frame(width: 30, height: 30)
+                    .foregroundStyle(provider.kind == .velvetFeatured ? VelvetTheme.accent : VelvetTheme.providerAccent)
+                    .frame(width: VelvetMetrics.listIconSlot, height: VelvetMetrics.listIconSlot)
                     .background(
-                        (provider.kind == .velvetFeatured ? VelvetTheme.accent : Color.blue).opacity(0.12),
+                        (provider.kind == .velvetFeatured ? VelvetTheme.accent : VelvetTheme.providerAccent)
+                            .opacity(VelvetTheme.selectionHighlightOpacity),
                         in: Circle()
                     )
 
@@ -106,10 +107,10 @@ struct VPNCompactNetworksCard: View {
                 if provider.status == .expired {
                     Text("Expired")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(VelvetTheme.errorTint)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.red.opacity(0.12), in: Capsule())
+                        .background(VelvetTheme.errorTint.opacity(VelvetTheme.selectionHighlightOpacity), in: Capsule())
                 }
 
                 Image(systemName: "chevron.right")

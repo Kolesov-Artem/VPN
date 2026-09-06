@@ -36,9 +36,8 @@ enum VelvetMotion {
     // MARK: - Springs
 
     private static let panelSpring = Animation.spring(
-        response: 0.42,
-        dampingFraction: 0.78,
-        blendDuration: 0.12
+        response: 0.3,
+        dampingFraction: 1.0
     )
     private static let panelSpringSheet = Animation.spring(
         response: 0.42,
@@ -118,7 +117,7 @@ enum VelvetMotion {
 
     /// Panel detent spring settle — used to gate scroll enablement.
     static var panelSettleDelay: Duration {
-        .seconds(0.48)
+        .seconds(0.35)
     }
 
     static var panelSettleReducedDelay: Duration {
@@ -163,6 +162,13 @@ enum VelvetMotion {
             return .opacity
         }
         return .opacity.combined(with: .offset(y: -chipEntranceOffsetY))
+    }
+
+    static func statsStrip(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .opacity.combined(with: .move(edge: .top))
     }
 
     // MARK: - Stagger helper

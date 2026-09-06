@@ -20,10 +20,11 @@ struct VPNIslandPanel: View {
     @Binding var isPanelInteracting: Bool
     var onShowConnectionInfo: (() -> Void)? = nil
 
-    let mockPublicIP: String
     let downloadRate: String
     let uploadRate: String
-    let sessionDurationText: String
+    let pingMs: Int
+    let usageFraction: Double
+    let sessionDataUsedText: String
 
     let safeAreaBottom: CGFloat
     let safeAreaTop: CGFloat
@@ -33,6 +34,7 @@ struct VPNIslandPanel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var dragTranslation: CGFloat = 0
+    @State private var cachedViewportHeight: CGFloat = 0
     @State private var scrollChromeMinY: CGFloat?
     @State private var scrollRestMinY: CGFloat?
     @State private var scrollEdgeProgress: CGFloat = 0
@@ -40,22 +42,28 @@ struct VPNIslandPanel: View {
     @State private var isDraggingPanel = false
     @State private var isCollapsingFromScroll = false
     @State private var isPositionAnimating = false
+    @State private var positionAnimationTask: Task<Void, Never>?
     @FocusState private var searchIsFocused: Bool
     @State private var query = VPNLocationQuery()
     @State private var showsDeleteConfirmation = false
 
     var body: some View {
         GeometryReader { proxy in
+            let showsSessionStats = connectionState == .connected
+                && !isPositionAnimating
+                && !isDraggingPanel
             let detents = BottomPanelDetents.makeIsland(
                 screenHeight: proxy.size.height + safeAreaBottom,
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop,
-                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize,
+                showsSessionStats: showsSessionStats
             )
-            let layout = BottomPanelInterpolator.layout(
+            let layout = BottomPanelInterpolator.displayLayout(
                 detents: detents,
                 position: position,
-                dragTranslation: dragTranslation
+                dragTranslation: dragTranslation,
+                isDragLite: isDraggingPanel
             )
             let panelInteracting = isDraggingPanel || isCollapsingFromScroll || isPositionAnimating
             let expandedTopInset = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
@@ -63,10 +71,7 @@ struct VPNIslandPanel: View {
             let searchScreenOffset = LocationSearchChrome.screenBottomOffset(
                 panelBottomMargin: detents.bottomMargin
             )
-            let viewportHeight = min(
-                proxy.size.height,
-                max(0, UIScreen.main.bounds.maxY - proxy.frame(in: .global).minY)
-            )
+            let viewportHeight = cachedViewportHeight > 0 ? cachedViewportHeight : proxy.size.height
 
             Color.clear
                 .allowsHitTesting(false)
@@ -101,6 +106,10 @@ struct VPNIslandPanel: View {
                 }
                 .onAppear {
                     isPanelInteracting = panelInteracting
+                    cachedViewportHeight = proxy.size.height
+                }
+                .onChange(of: proxy.size.height) { _, height in
+                    cachedViewportHeight = height
                 }
         }
         .sensoryFeedback(.selection, trigger: position)
@@ -136,12 +145,8 @@ struct VPNIslandPanel: View {
     }
 
     @ViewBuilder
-    private var panelBackground: some View {
-        if reduceTransparency {
-            Color(.systemBackground)
-        } else {
-            Rectangle().fill(.regularMaterial)
-        }
+    private func panelBackground(isDragLite: Bool) -> some View {
+        VelvetPanelBackground(prefersSolidFill: isDragLite)
     }
 
     private func panelShape(layout: BottomPanelVisualState) -> some Shape {
@@ -163,28 +168,48 @@ struct VPNIslandPanel: View {
         let searchScreenOffset = LocationSearchChrome.screenBottomOffset(
             panelBottomMargin: detents.bottomMargin
         )
+        let mountsScrollContent = position != .island
+            || isDraggingPanel
+            || isPositionAnimating
+            || dragTranslation != 0
 
         return ZStack(alignment: .top) {
-            locationsScrollBody(
-                detents: detents,
-                layout: layout,
-                searchRevealProgress: searchRevealProgress,
-                searchScreenOffset: searchScreenOffset
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            VStack(spacing: 10) {
-                connectionButton
+            if mountsScrollContent {
+                locationsScrollBody(
+                    detents: detents,
+                    layout: layout,
+                    searchRevealProgress: searchRevealProgress,
+                    searchScreenOffset: searchScreenOffset
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                islandRestingChrome(detents: detents)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, panelChromeHeight + 8)
+
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                connectionButton
+                    .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
+                    .padding(.bottom, VelvetMetrics.collapsedBottomPadding)
+            }
+            .padding(.top, VelvetCollapsedIslandLayout.chromeHeight(
+                showsSessionStats: connectionState == .connected
+                    && !isPositionAnimating
+                    && !isDraggingPanel
+            ))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .opacity(layout.collapsedContentOpacity)
             .allowsHitTesting(layout.collapsedContentOpacity > 0.5)
+            .animation(
+                isDraggingPanel ? nil : VelvetMotion.connectionState(reduceMotion: reduceMotion),
+                value: connectionState
+            )
         }
         .frame(height: layout.panelHeight, alignment: .top)
         .frame(maxWidth: .infinity)
         .background {
-            panelBackground
+            panelBackground(isDragLite: isDraggingPanel)
         }
         .clipShape(shape)
         .shadow(
@@ -202,26 +227,24 @@ struct VPNIslandPanel: View {
         )
     }
 
-    private var panelChromeHeight: CGFloat {
-        let headerHeight = BottomPanelDetents.expandedGripBandHeight + 44
-        guard connectionState == .connected else { return headerHeight }
-        return headerHeight + 58
+    private func islandRestingChrome(detents: BottomPanelDetents) -> some View {
+        panelTopBar(detents: detents)
     }
 
     @ViewBuilder
     private var connectionStatsStrip: some View {
-        if connectionState == .connected {
+        if connectionState == .connected, !isPositionAnimating, !isDraggingPanel {
             ConnectionStatsStrip(
-                mockPublicIP: mockPublicIP,
                 regionLabel: selectedLocation.name,
+                pingMs: pingMs,
                 downloadRate: downloadRate,
                 uploadRate: uploadRate,
-                durationText: sessionDurationText,
+                usageFraction: usageFraction,
+                sessionDataUsedText: sessionDataUsedText,
                 onTap: onShowConnectionInfo
             )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
+            .transition(VelvetMotion.statsStrip(reduceMotion: reduceMotion))
         }
     }
 
@@ -260,9 +283,10 @@ struct VPNIslandPanel: View {
                     onCollapse: collapseExpandedPanel
                 )
             }
-            .frame(height: 44)
+            .frame(height: VelvetMetrics.panelHeaderRowHeight)
 
             connectionStatsStrip
+                .padding(.top, connectionState == .connected ? VelvetMetrics.collapsedSectionSpacing : 0)
         }
         .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
@@ -326,6 +350,7 @@ struct VPNIslandPanel: View {
                 scrollEdgeProgress = 0
                 guard newValue != .expanded else { return }
                 scrollChromeMinY = nil
+                scrollRestMinY = nil
                 scrollProxy.scrollTo("scrollTop", anchor: .top)
             }
         }
@@ -424,9 +449,13 @@ struct VPNIslandPanel: View {
             .fixedSize()
             .accessibilityLabel(position == .island ? "Expand panel" : "Collapse panel")
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
+        .padding(.horizontal, VelvetTheme.horizontalPadding)
+        .padding(.bottom, VelvetMetrics.collapsedHeaderBottomPadding)
         .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
+    }
+
+    private var classicVPNIP: String {
+        "185.42.\(abs(selectedLocation.ping) % 200).\(18 + selectedLocation.name.count % 40)"
     }
 
     private var moreMenu: some View {
@@ -474,39 +503,14 @@ struct VPNIslandPanel: View {
     }
 
     private func headerIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-            .frame(width: 36, height: 36)
-            .background(Color(.tertiarySystemFill), in: Circle())
+        VelvetPanelHeaderIcon(systemName: systemName)
     }
 
     private var connectionButton: some View {
-        Button {
-            handleConnectionTap()
-        } label: {
-            HStack {
-                if connectionState == .connecting {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: connectionState == .connected ? "checkmark.shield.fill" : "power")
-                }
-                Text(connectionButtonTitle)
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 50)
-            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
-        .disabled(connectionState == .connecting)
-        .accessibilityHint(
-            connectionState == .connected
-                ? "Disconnects the demo VPN"
-                : "Connects the demo VPN"
+        VPNPrimaryConnectionButton(
+            title: connectionButtonTitle,
+            connectionState: connectionState,
+            action: handleConnectionTap
         )
     }
 
@@ -582,7 +586,7 @@ struct VPNIslandPanel: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, VelvetTheme.horizontalPadding)
         .padding(.top, 2)
         .padding(.bottom, usesNestedScroll ? detents.contentBottomInset : 0)
     }
@@ -609,7 +613,7 @@ struct VPNIslandPanel: View {
                     .accessibilityLabel("Remove filter: \(chip.title)")
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, VelvetTheme.horizontalPadding)
         }
         .scrollIndicators(.hidden)
     }
@@ -665,12 +669,12 @@ struct VPNIslandPanel: View {
 
                     if offset < locations.count - 1 {
                         Divider()
-                            .padding(.leading, 58)
+                            .padding(.leading, VelvetMetrics.nestedDividerInset)
                             .opacity(appearance)
                     }
                 }
             }
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius))
         }
     }
 
@@ -705,7 +709,7 @@ struct VPNIslandPanel: View {
             }
             .frame(width: 24, height: 24)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, VelvetTheme.horizontalPadding)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -715,9 +719,9 @@ struct VPNIslandPanel: View {
 
     private func signalColor(_ signal: VPNLocation.Signal) -> Color {
         switch signal {
-        case .excellent: .green
-        case .good: .yellow
-        case .fair: .red
+        case .excellent: VelvetTheme.connectedTint
+        case .good: VelvetTheme.warningTint
+        case .fair: VelvetTheme.errorTint
         }
     }
 
@@ -837,9 +841,11 @@ struct VPNIslandPanel: View {
     }
 
     private func schedulePositionAnimationEnd() {
+        positionAnimationTask?.cancel()
         let delay = VelvetMotion.panelSettleDelay(reduceMotion: reduceMotion)
-        Task { @MainActor in
+        positionAnimationTask = Task { @MainActor in
             try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
             isPositionAnimating = false
         }
     }

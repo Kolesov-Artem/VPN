@@ -52,7 +52,7 @@ struct VPNUseCaseCardsCard: View {
             .padding(12)
             .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
             .background(
-                isActive ? VelvetTheme.accent.opacity(0.12) : VelvetTheme.contentSurface,
+                isActive ? VelvetTheme.accent.opacity(VelvetTheme.selectionHighlightOpacity) : VelvetTheme.contentSurface,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .overlay {

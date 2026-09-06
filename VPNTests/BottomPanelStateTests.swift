@@ -6,7 +6,10 @@ struct BottomPanelStateTests {
     private let detents = BottomPanelDetents(
         expandedHeight: 650,
         intermediateHeight: 420,
-        islandHeight: 218,
+        islandHeight: VelvetCollapsedIslandLayout.islandHeight(
+            showsSessionStats: false,
+            isAccessibilitySize: false
+        ),
         bottomMargin: 34,
         topMargin: 0
     )
@@ -174,10 +177,13 @@ struct BottomPanelStateTests {
             isAccessibilitySize: false
         )
 
-        #expect(islandDetents.expandedHeight == 852 - 59 + 16)
-        #expect(islandDetents.topMargin == 59 - 16)
-        #expect(islandDetents.intermediateHeight == 852 * 0.50)
-        #expect(islandDetents.islandHeight == 218)
+        #expect(islandDetents.expandedHeight == CGFloat(852 - 59 + 16))
+        #expect(islandDetents.topMargin == CGFloat(59 - 16))
+        #expect(islandDetents.intermediateHeight == CGFloat(852 * 0.50))
+        #expect(islandDetents.islandHeight == VelvetCollapsedIslandLayout.islandHeight(
+            showsSessionStats: false,
+            isAccessibilitySize: false
+        ))
         #expect(islandDetents.intermediateHeight < islandDetents.expandedHeight)
     }
 
@@ -214,6 +220,51 @@ struct BottomPanelStateTests {
 
         #expect(detents.bottomMargin == 34)
         #expect(detents.contentBottomInset > detents.bottomMargin)
+    }
+
+    @Test
+    func connectedIslandDetentStaysBelowIntermediateOnShortViewports() {
+        let detents = BottomPanelDetents.makeIsland(
+            screenHeight: 320,
+            safeAreaBottom: 0,
+            safeAreaTop: 43,
+            isAccessibilitySize: false,
+            showsSessionStats: true
+        )
+
+        #expect(detents.height(for: .island) < detents.height(for: .intermediate))
+        #expect(detents.height(for: .intermediate) < detents.height(for: .expanded))
+    }
+
+    @Test
+    func sheetIslandDetentMatchesComputedCollapsedHeight() {
+        let collapsedHeight = VelvetCollapsedIslandLayout.islandHeight(
+            showsSessionStats: false,
+            isAccessibilitySize: false
+        )
+
+        #expect(collapsedHeight == 145)
+    }
+
+    @Test
+    func dragLiteLayoutFreezesExpensiveMorphWhileTrackingHeight() {
+        let live = BottomPanelInterpolator.layout(
+            detents: detents,
+            position: .intermediate,
+            dragTranslation: -80
+        )
+        let dragLite = BottomPanelInterpolator.displayLayout(
+            detents: detents,
+            position: .intermediate,
+            dragTranslation: -80,
+            isDragLite: true
+        )
+
+        #expect(dragLite.panelHeight == live.panelHeight)
+        #expect(dragLite.horizontalInset == VelvetTheme.islandHorizontalInset)
+        #expect(dragLite.bottomCornerRadius == VelvetTheme.panelRadius)
+        #expect(dragLite.shadowRadius == 20)
+        #expect(dragLite.sheetMorphProgress == 0)
     }
 
     @Test

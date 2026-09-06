@@ -30,9 +30,9 @@ struct ExpandedSheetCompactBar: View {
             .buttonStyle(PressScaleButtonStyle())
             .accessibilityLabel("Collapse panel")
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, VelvetTheme.horizontalPadding)
         .opacity(scrollEdgeProgress)
-        .frame(height: 44)
+        .frame(height: VelvetMetrics.panelHeaderRowHeight)
         .allowsHitTesting(scrollEdgeProgress > 0.5)
     }
 }

@@ -9,7 +9,15 @@ private struct SafeAreaBottomPreferenceKey: PreferenceKey {
 }
 
 enum VPNPanelPresentation {
-    static let island = PresentationDetent.height(218)
+    static var island: PresentationDetent {
+        PresentationDetent.height(
+            VelvetCollapsedIslandLayout.islandHeight(
+                showsSessionStats: false,
+                isAccessibilitySize: false
+            )
+        )
+    }
+
     static let intermediate = PresentationDetent.fraction(0.56)
 }
 
@@ -17,12 +25,6 @@ struct VPNBottomPanel: View {
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
-    var onShowConnectionInfo: (() -> Void)? = nil
-
-    let mockPublicIP: String
-    let downloadRate: String
-    let uploadRate: String
-    let sessionDurationText: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var searchIsFocused: Bool
@@ -39,18 +41,22 @@ struct VPNBottomPanel: View {
             panelHeader
                 .padding(.top, 8)
 
-            connectionStatsStrip
-
             // Both layers stay mounted and only cross-fade. Swapping them with
             // an `if` re-flows the panel while the detent is still animating,
             // which reads as the content stretching open.
             ZStack(alignment: .top) {
-                connectionButton
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .opacity(showsLocations ? 0 : 1)
-                    .allowsHitTesting(!showsLocations)
-                    .animation(contentAnimation, value: showsLocations)
+                VStack(spacing: 10) {
+                    ConnectionIPWell(
+                        deviceIP: ConnectionIPWell.demoDeviceIP,
+                        vpnIP: connectionState == .connected ? classicVPNIP : nil
+                    )
+                    connectionButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .opacity(showsLocations ? 0 : 1)
+                .allowsHitTesting(!showsLocations)
+                .animation(contentAnimation, value: showsLocations)
 
                 locationsList
                     .opacity(showsLocations ? 1 : 0)
@@ -118,8 +124,7 @@ struct VPNBottomPanel: View {
             if position == .island {
                 ConnectionStatusLabels(
                     connectionState: connectionState,
-                    selectedLocation: selectedLocation,
-                    onTap: onShowConnectionInfo
+                    selectedLocation: selectedLocation
                 )
             } else {
                 ZStack {
@@ -157,21 +162,8 @@ struct VPNBottomPanel: View {
         .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
     }
 
-    @ViewBuilder
-    private var connectionStatsStrip: some View {
-        if connectionState == .connected {
-            ConnectionStatsStrip(
-                mockPublicIP: mockPublicIP,
-                regionLabel: selectedLocation.name,
-                downloadRate: downloadRate,
-                uploadRate: uploadRate,
-                durationText: sessionDurationText,
-                onTap: onShowConnectionInfo
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .transition(.opacity.combined(with: .move(edge: .top)))
-        }
+    private var classicVPNIP: String {
+        "185.42.\(abs(selectedLocation.ping) % 200).\(18 + selectedLocation.name.count % 40)"
     }
 
     private var moreMenu: some View {
@@ -241,7 +233,7 @@ struct VPNBottomPanel: View {
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.roundedRectangle(radius: 16))
-        .tint(connectionState == .connected ? Color.green : VelvetTheme.accent)
+        .tint(connectionState == .connected ? VelvetTheme.connectedTint : VelvetTheme.accent)
         .disabled(connectionState == .connecting)
         .accessibilityHint(
             connectionState == .connected
@@ -694,9 +686,9 @@ struct VPNBottomPanel: View {
 
     private func signalColor(_ signal: VPNLocation.Signal) -> Color {
         switch signal {
-        case .excellent: .green
-        case .good: .yellow
-        case .fair: .red
+        case .excellent: VelvetTheme.connectedTint
+        case .good: VelvetTheme.warningTint
+        case .fair: VelvetTheme.errorTint
         }
     }
 
