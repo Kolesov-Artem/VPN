@@ -39,6 +39,7 @@ struct ExpandedSheetCompactBar: View {
 
 private struct PanelScrollEdgeBarModifier<Bar: View>: ViewModifier {
     let scrollEdgeProgress: CGFloat
+    let showsScrollEdgeEffect: Bool
     let bar: Bar
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -49,13 +50,13 @@ private struct PanelScrollEdgeBarModifier<Bar: View>: ViewModifier {
                 .safeAreaBar(edge: .top, spacing: 0) {
                     bar
                 }
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .modifier(ConditionalScrollEdgeEffect(enabled: showsScrollEdgeEffect))
         } else {
             content
                 .safeAreaInset(edge: .top, spacing: 0) {
                     bar
                         .background(alignment: .top) {
-                            if scrollEdgeProgress > 0.01 {
+                            if showsScrollEdgeEffect, scrollEdgeProgress > 0.01 {
                                 if reduceTransparency {
                                     Color(.systemBackground)
                                 } else {
@@ -68,16 +69,36 @@ private struct PanelScrollEdgeBarModifier<Bar: View>: ViewModifier {
     }
 }
 
+@available(iOS 26.0, *)
+private struct ConditionalScrollEdgeEffect: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
+        }
+    }
+}
+
 extension View {
     func panelScrollEdgeBar<Bar: View>(
         scrollEdgeProgress: CGFloat,
+        showsScrollEdgeEffect: Bool = true,
         @ViewBuilder bar: () -> Bar
     ) -> some View {
         modifier(
             PanelScrollEdgeBarModifier(
                 scrollEdgeProgress: scrollEdgeProgress,
+                showsScrollEdgeEffect: showsScrollEdgeEffect,
                 bar: bar()
             )
         )
+    }
+
+    /// Lets vertical panel drags run alongside child scroll views and carousels.
+    func bottomPanelSimultaneousDrag<G: Gesture>(_ gesture: G) -> some View {
+        simultaneousGesture(gesture, including: .all)
     }
 }

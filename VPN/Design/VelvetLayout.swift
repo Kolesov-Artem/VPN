@@ -35,6 +35,17 @@ enum VelvetMetrics {
     static let statsStripPadding = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
     static let statsStripCornerRadius: CGFloat = 20
     static let contentSurfaceCornerRadius: CGFloat = 20
+    /// Inset between a content-surface card edge and a nested block (e.g. stats strip).
+    static let contentSurfaceInnerPadding: CGFloat = 8
+
+    /// Concentric corner radius for a block nested inside a rounded card.
+    static func nestedCornerRadius(outer: CGFloat, inset: CGFloat) -> CGFloat {
+        max(outer - inset, 0)
+    }
+
+    static var nestedStatsStripCornerRadius: CGFloat {
+        nestedCornerRadius(outer: contentSurfaceCornerRadius, inset: contentSurfaceInnerPadding)
+    }
     static let statsStripSectionSpacing: CGFloat = 12
     static let statsStripProgressHeight: CGFloat = 6
     static let statsStripProgressCornerRadius: CGFloat = 3
@@ -43,6 +54,7 @@ enum VelvetMetrics {
     static let statsStripCollapsedHeight: CGFloat = 106
     static let statsStripEstimatedHeight: CGFloat = statsStripCollapsedHeight
     static let panelHeaderRowHeight: CGFloat = 44
+    static let expandedPanelHeaderHeight: CGFloat = 56
     static let collapsedHeaderBottomPadding: CGFloat = 8
     static let collapsedSectionSpacing: CGFloat = 8
     static let collapsedBottomPadding: CGFloat = 16
@@ -110,6 +122,20 @@ extension View {
     func velvetSheetStyle() -> some View {
         presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+    }
+
+    /// Visible grip band height with a larger invisible drag target centered on it.
+    func bottomPanelDragHandle<G: Gesture>(gesture: G) -> some View {
+        frame(maxWidth: .infinity)
+            .frame(height: BottomPanelDetents.expandedGripBandHeight)
+            .background(alignment: .center) {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: BottomPanelDetents.expandedGripHitHeight)
+                    .contentShape(Rectangle())
+            }
+            .contentShape(Rectangle())
+            .gesture(gesture)
     }
 }
 

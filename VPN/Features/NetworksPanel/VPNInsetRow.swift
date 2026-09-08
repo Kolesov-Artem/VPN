@@ -21,7 +21,7 @@ struct VPNInsetRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(isSelected ? .body.weight(.semibold) : .body)
-                    .foregroundStyle(isSelected ? VelvetTheme.accent : .primary)
+                    .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
@@ -39,7 +39,7 @@ struct VPNInsetRow: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(VelvetTheme.accent.opacity(VelvetTheme.selectionHighlightOpacity))
+                    .strokeBorder(Color.primary, lineWidth: 2)
             }
         }
         .contentShape(Rectangle())
@@ -81,7 +81,7 @@ struct VPNInsetRow: View {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body)
-                    .foregroundStyle(VelvetTheme.accent)
+                    .foregroundStyle(.primary)
                     .accessibilityLabel("Selected")
             }
 

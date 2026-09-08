@@ -22,9 +22,7 @@ struct VPNCompactNetworksCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
-                }
+                isExpanded.toggle()
             } label: {
                 HStack(spacing: 8) {
                     Text(summaryTitle)
@@ -58,8 +56,11 @@ struct VPNCompactNetworksCard: View {
                         Divider().padding(.leading, 16)
                     }
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+        .clipped()
         .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
     }
 

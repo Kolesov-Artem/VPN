@@ -88,6 +88,28 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         guard status.isActive else { return nil }
         return includedInSmartAuto ? "Included in Auto" : "Manual only"
     }
+
+    /// Subtitle for the expanded panel header, e.g. "120 GB left, 28 days left".
+    var panelHeaderSubtitle: String {
+        switch status {
+        case .expired:
+            "Subscription expired"
+        case let .active(_, trafficRemaining):
+            if let daysRemainingLabel {
+                "\(trafficRemaining), \(daysRemainingLabel)"
+            } else {
+                trafficRemaining
+            }
+        }
+    }
+
+    private var daysRemainingLabel: String? {
+        guard let expiresAt else { return nil }
+        let days = Calendar.current.dateComponents([.day], from: .now, to: expiresAt).day ?? 0
+        if days < 0 { return "Expired" }
+        if days == 0 { return "0 days left" }
+        return "\(days) days left"
+    }
 }
 
 enum VPNLocationSelection: Equatable, Codable {

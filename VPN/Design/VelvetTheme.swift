@@ -14,6 +14,8 @@ extension Color {
 }
 
 enum VelvetTheme {
+    static let paywallURL = URL(string: "https://velvet.vpn")!
+
     static let accent = Color(
         red: 119 / 255,
         green: 41 / 255,

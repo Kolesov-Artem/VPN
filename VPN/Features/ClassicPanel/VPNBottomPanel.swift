@@ -25,6 +25,7 @@ struct VPNBottomPanel: View {
     @Binding var position: BottomPanelPosition
     @Binding var connectionState: VPNConnectionState
     @Binding var selectedLocation: VPNLocation
+    var detentMode: VPNPanelDetentMode = .stepped
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var searchIsFocused: Bool
@@ -277,6 +278,7 @@ struct VPNBottomPanel: View {
             for: .scrollContent
         )
         .textCase(nil)
+        .scrollDisabled(true)
         .scrollDismissesKeyboard(.interactively)
         .environment(\.defaultMinListRowHeight, 44)
         .animation(VelvetMotion.queryChange(reduceMotion: reduceMotion), value: query)
@@ -711,14 +713,19 @@ struct VPNBottomPanel: View {
 
     private func movePanelFromHeader() {
         withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {
-            position = position == .island ? .intermediate : position.nextLower
+            if position == .island {
+                position = detentMode == .direct ? .expanded : .intermediate
+            } else {
+                position = detentMode == .direct ? .island : position.nextLower
+            }
         }
     }
 
     private func expandPanelForSearchIfNeeded(isFocused: Bool) {
         guard let target = position.expandedForActiveSearch(
             isFocused: isFocused,
-            queryText: query.text
+            queryText: query.text,
+            detentMode: detentMode
         ) else { return }
 
         withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion, sheetStyle: true)) {

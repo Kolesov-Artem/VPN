@@ -29,6 +29,7 @@ struct HomeView: View {
     @State private var shouldAutoConnect = false
     @State private var statsTask: Task<Void, Never>?
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
+    @AppStorage("velvet.panelDetentMode") private var panelDetentMode = VPNPanelDetentMode.stepped
     @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
     @AppStorage("velvet.autoConnect") private var autoConnect = false
     @AppStorage("velvet.connectLastLocation") private var connectLastLocation = true
@@ -94,6 +95,9 @@ struct HomeView: View {
             connectionState = .disconnected
             connectedAt = nil
         }
+        .onChange(of: panelDetentMode) { _, _ in
+            panelPosition = .island
+        }
         .onChange(of: locationSelection) { _, selection in
             persistLocationSelection(selection)
         }
@@ -142,7 +146,8 @@ struct HomeView: View {
                 usageFraction: sessionUsageFraction,
                 sessionDataUsedText: sessionDataUsedText,
                 safeAreaBottom: safeAreaBottom,
-                safeAreaTop: safeAreaTop
+                safeAreaTop: safeAreaTop,
+                detentMode: panelDetentMode
             )
         }
     }
@@ -161,7 +166,8 @@ struct HomeView: View {
                 usageFraction: sessionUsageFraction,
                 sessionDataUsedText: sessionDataUsedText,
                 safeAreaBottom: safeAreaBottom,
-                safeAreaTop: safeAreaTop
+                safeAreaTop: safeAreaTop,
+                detentMode: panelDetentMode
             )
         }
     }
@@ -172,19 +178,16 @@ struct HomeView: View {
                 VPNBottomPanel(
                     position: $panelPosition,
                     connectionState: $connectionState,
-                    selectedLocation: $selectedLocation
+                    selectedLocation: $selectedLocation,
+                    detentMode: panelDetentMode
                 )
                 .presentationDetents(
-                    [
-                        VPNPanelPresentation.island,
-                        VPNPanelPresentation.intermediate,
-                        .large,
-                    ],
+                    sheetPresentationDetents,
                     selection: presentationDetent
                 )
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(
-                    .enabled(upThrough: VPNPanelPresentation.intermediate)
+                    .enabled(upThrough: sheetBackgroundInteractionDetent)
                 )
                 .presentationBackground {
                     if reduceTransparency {
@@ -374,6 +377,18 @@ struct HomeView: View {
         guard let resolvedConnection else { return "185.42.18.90" }
         let suffix = abs(resolvedConnection.location.ping) % 200
         return "185.42.\(suffix).\(18 + resolvedConnection.provider.name.count % 40)"
+    }
+
+    private var sheetPresentationDetents: Set<PresentationDetent> {
+        [
+            VPNPanelPresentation.island,
+            VPNPanelPresentation.intermediate,
+            .large,
+        ]
+    }
+
+    private var sheetBackgroundInteractionDetent: PresentationDetent {
+        VPNPanelPresentation.intermediate
     }
 
     private var presentationDetent: Binding<PresentationDetent> {

@@ -7,11 +7,42 @@ enum BottomPanelPosition: Equatable {
     case expanded
 
     /// Half-height detents should grow to full screen once search becomes active.
-    func expandedForActiveSearch(isFocused: Bool, queryText: String) -> BottomPanelPosition? {
-        guard self == .intermediate else { return nil }
+    func expandedForActiveSearch(
+        isFocused: Bool,
+        queryText: String,
+        detentMode: VPNPanelDetentMode = .stepped
+    ) -> BottomPanelPosition? {
         let trimmed = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isFocused || !trimmed.isEmpty else { return nil }
-        return .expanded
+        guard self != .expanded else { return nil }
+
+        switch detentMode {
+        case .stepped:
+            guard self == .intermediate else { return nil }
+            return .expanded
+        case .direct:
+            return .expanded
+        }
+    }
+
+    /// Chevron / compact-bar target one step lower than the current detent.
+    func collapsedByOneStep(detentMode: VPNPanelDetentMode) -> BottomPanelPosition {
+        switch detentMode {
+        case .stepped:
+            nextLower
+        case .direct:
+            .island
+        }
+    }
+
+    /// Chevron target one step higher than the current detent.
+    func expandedByOneStep(detentMode: VPNPanelDetentMode) -> BottomPanelPosition {
+        switch detentMode {
+        case .stepped:
+            nextHigher
+        case .direct:
+            .expanded
+        }
     }
 
     var nextHigher: BottomPanelPosition {
@@ -39,8 +70,10 @@ struct BottomPanelDetents {
     /// Status bar / Dynamic Island clearance for the full-screen sheet.
     let topMargin: CGFloat
 
-    /// Height of the fixed drag-indicator band at the top of the expanded sheet.
+    /// Visual height of the drag-indicator capsule and its padding.
     static let expandedGripBandHeight: CGFloat = 8 + 5 + 6
+    /// Touch target for the drag handle — wider than the visible capsule.
+    static let expandedGripHitHeight: CGFloat = 52
 
     func height(for position: BottomPanelPosition) -> CGFloat {
         switch position {
@@ -218,8 +251,7 @@ enum BottomPanelInterpolator {
         )
     }
 
-    /// Cheap visuals while the finger is down: height still tracks 1:1, but blur,
-    /// shadow morph, and corner interpolation are frozen until settle.
+    /// While dragging, height tracks the finger 1:1; only shadow is frozen to avoid shimmer.
     static func displayLayout(
         detents: BottomPanelDetents,
         position: BottomPanelPosition,
@@ -233,15 +265,13 @@ enum BottomPanelInterpolator {
         )
         guard isDragLite else { return layout }
 
-        let sheetAnchor = position == .expanded
-        let morph: CGFloat = sheetAnchor ? 1 : 0
         return BottomPanelVisualState(
             panelHeight: layout.panelHeight,
-            horizontalInset: sheetAnchor ? 0 : VelvetTheme.islandHorizontalInset,
-            bottomInset: sheetAnchor ? 0 : detents.bottomMargin,
-            bottomCornerRadius: sheetAnchor ? 0 : VelvetTheme.panelRadius,
+            horizontalInset: layout.horizontalInset,
+            bottomInset: layout.bottomInset,
+            bottomCornerRadius: layout.bottomCornerRadius,
             revealProgress: layout.revealProgress,
-            sheetMorphProgress: morph,
+            sheetMorphProgress: layout.sheetMorphProgress,
             collapsedContentOpacity: layout.collapsedContentOpacity,
             listProgress: layout.listProgress,
             shadowOpacity: VelvetTheme.islandShadowOpacity,
@@ -286,14 +316,48 @@ enum BottomPanelInterpolator {
     }
 }
 
+enum BottomPanelDragMetrics {
+    static let minimumDistance: CGFloat = 8
+    static let verticalDominancePadding: CGFloat = 4
+
+    static func isVerticalDominant(translation: CGSize) -> Bool {
+        abs(translation.height) > verticalDominancePadding
+            && abs(translation.height) > abs(translation.width)
+    }
+}
+
 struct BottomPanelSnapResolver {
-    static let threshold: CGFloat = 72
+    static let threshold: CGFloat = 52
+    static let directFlingThreshold: CGFloat = 120
 
     static func resolve(
         current: BottomPanelPosition,
         translation: CGFloat,
         predictedEndTranslation: CGFloat,
-        detents: BottomPanelDetents
+        detents: BottomPanelDetents,
+        mode: VPNPanelDetentMode = .stepped
+    ) -> BottomPanelPosition {
+        switch mode {
+        case .stepped:
+            resolveStepped(
+                current: current,
+                translation: translation,
+                predictedEndTranslation: predictedEndTranslation
+            )
+        case .direct:
+            resolveDirect(
+                current: current,
+                translation: translation,
+                predictedEndTranslation: predictedEndTranslation,
+                detents: detents
+            )
+        }
+    }
+
+    private static func resolveStepped(
+        current: BottomPanelPosition,
+        translation: CGFloat,
+        predictedEndTranslation: CGFloat
     ) -> BottomPanelPosition {
         let projectedTranslation =
             abs(predictedEndTranslation) > abs(translation)
@@ -313,5 +377,51 @@ struct BottomPanelSnapResolver {
         }
 
         return current
+    }
+
+    private static func resolveDirect(
+        current: BottomPanelPosition,
+        translation: CGFloat,
+        predictedEndTranslation: CGFloat,
+        detents: BottomPanelDetents
+    ) -> BottomPanelPosition {
+        let projectedTranslation =
+            abs(predictedEndTranslation) > abs(translation)
+            ? predictedEndTranslation
+            : translation
+
+        let releaseHeight = detents.height(for: current) - translation
+        let projectedHeight = detents.height(for: current) - projectedTranslation
+
+        if projectedTranslation <= -directFlingThreshold,
+           nearestPosition(to: projectedHeight, detents: detents) == .expanded {
+            return .expanded
+        }
+
+        if projectedTranslation >= directFlingThreshold,
+           nearestPosition(to: projectedHeight, detents: detents) == .island {
+            return .island
+        }
+
+        if abs(projectedTranslation) < threshold {
+            return current
+        }
+
+        return nearestPosition(to: releaseHeight, detents: detents)
+    }
+
+    private static func nearestPosition(
+        to height: CGFloat,
+        detents: BottomPanelDetents
+    ) -> BottomPanelPosition {
+        let candidates: [(BottomPanelPosition, CGFloat)] = [
+            (.island, detents.islandHeight),
+            (.intermediate, detents.intermediateHeight),
+            (.expanded, detents.expandedHeight),
+        ]
+
+        return candidates.min { lhs, rhs in
+            abs(lhs.1 - height) < abs(rhs.1 - height)
+        }?.0 ?? .island
     }
 }

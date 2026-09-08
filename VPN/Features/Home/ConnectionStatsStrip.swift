@@ -8,7 +8,11 @@ struct ConnectionStatsStrip: View {
     let uploadRate: String
     var usageFraction: Double = 0
     var sessionDataUsedText: String = "0 MB this session"
-    var onTap: (() -> Void)?
+    var showsBackground: Bool = true
+    var usesContentPadding: Bool = true
+    var cornerRadius: CGFloat = VelvetMetrics.statsStripCornerRadius
+    var progressTint: Color = VelvetTheme.accent
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         Group {
@@ -29,8 +33,12 @@ struct ConnectionStatsStrip: View {
             usageSection
             statsRow
         }
-        .padding(VelvetMetrics.statsStripPadding)
-        .background(statsBackground)
+        .padding(usesContentPadding ? VelvetMetrics.statsStripPadding : EdgeInsets())
+        .background {
+            if showsBackground {
+                statsBackground
+            }
+        }
         .contentShape(Rectangle())
     }
 
@@ -62,7 +70,7 @@ struct ConnectionStatsStrip: View {
                     .fill(VelvetTheme.statsStripProgressTrack)
 
                 RoundedRectangle(cornerRadius: VelvetMetrics.statsStripProgressCornerRadius, style: .continuous)
-                    .fill(VelvetTheme.accent)
+                    .fill(progressTint)
                     .frame(width: geometry.size.width * usageFraction.clamped(to: 0...1))
             }
         }
@@ -97,7 +105,7 @@ struct ConnectionStatsStrip: View {
         VelvetTheme.statsStripBackground
             .clipShape(
                 RoundedRectangle(
-                    cornerRadius: VelvetMetrics.statsStripCornerRadius,
+                    cornerRadius: cornerRadius,
                     style: .continuous
                 )
             )

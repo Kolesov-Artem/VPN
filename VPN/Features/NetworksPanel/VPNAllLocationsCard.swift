@@ -8,7 +8,6 @@ struct VPNAllLocationsCard: View {
     var pingResults: [String: Int] = [:]
     var pingingIDs: Set<String> = []
 
-    let isDraggingPanel: Bool
     let onSmartLocation: (VPNUserJob) -> Void
     let onManualLocation: (VPNNetworkLocation) -> Void
 
@@ -23,7 +22,7 @@ struct VPNAllLocationsCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !query.isDefault && !isDraggingPanel {
+            if !query.isDefault {
                 activeFilterChips
                 Divider().padding(.leading, 16)
             }
@@ -51,9 +50,7 @@ struct VPNAllLocationsCard: View {
         return VStack(spacing: 0) {
             Button {
                 if isExpandable {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        toggleGroupExpansion(group.id)
-                    }
+                    toggleGroupExpansion(group.id)
                 } else if let only = group.candidates.first {
                     onManualLocation(only)
                 }
@@ -73,22 +70,27 @@ struct VPNAllLocationsCard: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                if let smartLocation {
-                    Divider().padding(.leading, 58)
-                    smartLocationRow(smartLocation, country: group.name)
-                }
-
-                ForEach(group.candidates) { candidate in
-                    Divider().padding(.leading, 58)
-                    Button {
-                        onManualLocation(candidate)
-                    } label: {
-                        candidateRow(candidate)
+                Group {
+                    if let smartLocation {
+                        Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
+                        smartLocationRow(smartLocation, country: group.name)
                     }
-                    .buttonStyle(.plain)
+
+                    ForEach(group.candidates) { candidate in
+                        Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
+                        Button {
+                            onManualLocation(candidate)
+                        } label: {
+                            candidateRow(candidate)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+        .clipped()
     }
 
     private func smartLocationRow(_ smartLocation: VPNSmartCountryLocation, country: String) -> some View {

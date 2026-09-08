@@ -3,6 +3,7 @@ import UIKit
 
 struct HomeSettingsView: View {
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
+    @AppStorage("velvet.panelDetentMode") private var panelDetentMode = VPNPanelDetentMode.stepped
     @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
     @AppStorage("velvet.autoConnect") private var autoConnect = false
     @AppStorage("velvet.connectLastLocation") private var connectLastLocation = true
@@ -91,14 +92,24 @@ struct HomeSettingsView: View {
                     Text("Layout")
                 }
 
-                if homeFormat == .classic {
-                    Section("Bottom panel") {
+                Section {
+                    if homeFormat == .classic {
                         Picker("Panel", selection: $panelStyle) {
                             ForEach(VPNPanelStyle.allCases) { style in
                                 Text(style.title).tag(style)
                             }
                         }
                     }
+
+                    Picker("Detent behavior", selection: $panelDetentMode) {
+                        ForEach(VPNPanelDetentMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                } header: {
+                    Text("Bottom panel")
+                } footer: {
+                    Text(panelDetentMode.subtitle)
                 }
 
                 Section("About") {

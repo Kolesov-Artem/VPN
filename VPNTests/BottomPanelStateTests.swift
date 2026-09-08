@@ -57,6 +57,17 @@ struct BottomPanelStateTests {
     }
 
     @Test
+    func activeSearchExpandsFromIslandInDirectMode() {
+        #expect(
+            BottomPanelPosition.island.expandedForActiveSearch(
+                isFocused: true,
+                queryText: "",
+                detentMode: .direct
+            ) == .expanded
+        )
+    }
+
+    @Test
     func detentsIncreaseInHeight() {
         #expect(detents.height(for: .island) < detents.height(for: .intermediate))
         #expect(detents.height(for: .intermediate) < detents.height(for: .expanded))
@@ -120,6 +131,74 @@ struct BottomPanelStateTests {
         )
 
         #expect(result == .island)
+    }
+
+    @Test
+    func directFlingFromIslandExpandsToFull() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -24,
+            predictedEndTranslation: -400,
+            detents: detents,
+            mode: .direct
+        )
+
+        #expect(result == .expanded)
+    }
+
+    @Test
+    func directFlickFromExpandedCollapsesToIsland() {
+        let result = BottomPanelSnapResolver.resolve(
+            current: .expanded,
+            translation: 32,
+            predictedEndTranslation: 400,
+            detents: detents,
+            mode: .direct
+        )
+
+        #expect(result == .island)
+    }
+
+    @Test
+    func directReleaseBelowMidpointStaysCollapsed() {
+        let lift = detents.intermediateHeight - detents.islandHeight
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -lift * 0.3,
+            predictedEndTranslation: -lift * 0.25,
+            detents: detents,
+            mode: .direct
+        )
+
+        #expect(result == .island)
+    }
+
+    @Test
+    func directReleaseAboveMidpointSnapsToIntermediate() {
+        let lift = detents.intermediateHeight - detents.islandHeight
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -lift,
+            predictedEndTranslation: -lift * 0.95,
+            detents: detents,
+            mode: .direct
+        )
+
+        #expect(result == .intermediate)
+    }
+
+    @Test
+    func directReleaseNearExpandedSnapsToFull() {
+        let lift = detents.expandedHeight - detents.islandHeight
+        let result = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -lift * 0.92,
+            predictedEndTranslation: -lift * 0.9,
+            detents: detents,
+            mode: .direct
+        )
+
+        #expect(result == .expanded)
     }
 
     @Test
@@ -261,10 +340,11 @@ struct BottomPanelStateTests {
         )
 
         #expect(dragLite.panelHeight == live.panelHeight)
-        #expect(dragLite.horizontalInset == VelvetTheme.islandHorizontalInset)
-        #expect(dragLite.bottomCornerRadius == VelvetTheme.panelRadius)
+        #expect(dragLite.horizontalInset == live.horizontalInset)
+        #expect(dragLite.bottomCornerRadius == live.bottomCornerRadius)
+        #expect(dragLite.sheetMorphProgress == live.sheetMorphProgress)
         #expect(dragLite.shadowRadius == 20)
-        #expect(dragLite.sheetMorphProgress == 0)
+        #expect(dragLite.shadowOpacity == VelvetTheme.islandShadowOpacity)
     }
 
     @Test
