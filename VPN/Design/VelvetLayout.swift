@@ -30,7 +30,7 @@ enum VelvetMetrics {
     static let rowVerticalPadding: CGFloat = 14
     static let rowHorizontalPadding: CGFloat = 16
     static let listIconSlot: CGFloat = 32
-    static let primaryButtonHeight: CGFloat = 50
+    static let primaryButtonHeight: CGFloat = 56
     static let searchControlHeight: CGFloat = 50
     static let statsStripPadding = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
     static let statsStripCornerRadius: CGFloat = 20
@@ -56,7 +56,7 @@ enum VelvetMetrics {
     static let panelHeaderRowHeight: CGFloat = 44
     static let expandedPanelHeaderHeight: CGFloat = 56
     static let collapsedHeaderBottomPadding: CGFloat = 8
-    static let collapsedSectionSpacing: CGFloat = 8
+    static let collapsedSectionSpacing: CGFloat = 16
     static let collapsedBottomPadding: CGFloat = 16
     static let islandProviderIconSize: CGFloat = 40
     static let islandChromeButtonSize: CGFloat = 36

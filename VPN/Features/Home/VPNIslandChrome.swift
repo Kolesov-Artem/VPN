@@ -135,6 +135,7 @@ struct VPNIslandCollapsedHeader: View {
 struct VPNPrimaryConnectionButton: View {
     let title: String
     let connectionState: VPNConnectionState
+    var size: ControlSize = .large
     let action: () -> Void
 
     var body: some View {
@@ -142,13 +143,15 @@ struct VPNPrimaryConnectionButton: View {
             HStack(spacing: 8) {
                 if connectionState == .connecting {
                     ProgressView()
+                        .controlSize(size)
                         .tint(.white)
                 } else {
                     Image(systemName: "power")
+                        .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
                 }
 
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -156,6 +159,7 @@ struct VPNPrimaryConnectionButton: View {
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
         }
         .buttonStyle(PressScaleButtonStyle())
+        .controlSize(size)
         .disabled(connectionState == .connecting)
         .accessibilityHint(
             connectionState == .connected

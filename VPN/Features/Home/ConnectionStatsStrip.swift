@@ -17,8 +17,9 @@ struct ConnectionStatsStrip: View {
     var body: some View {
         Group {
             if let onTap {
-                Button(action: onTap) { content }
-                    .buttonStyle(PressScaleButtonStyle())
+                content
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onTap)
             } else {
                 content
             }

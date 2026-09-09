@@ -134,6 +134,28 @@ struct BottomPanelStateTests {
     }
 
     @Test
+    func curtainDragSnapUsesDirectModeForWeakAndStrongSwipes() {
+        let liftToHalf = detents.intermediateHeight - detents.islandHeight
+        let weakFromIsland = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -liftToHalf * 0.55,
+            predictedEndTranslation: -liftToHalf * 0.5,
+            detents: detents,
+            mode: .direct
+        )
+        #expect(weakFromIsland == .intermediate)
+
+        let strongFromIsland = BottomPanelSnapResolver.resolve(
+            current: .island,
+            translation: -24,
+            predictedEndTranslation: -400,
+            detents: detents,
+            mode: .direct
+        )
+        #expect(strongFromIsland == .expanded)
+    }
+
+    @Test
     func directFlingFromIslandExpandsToFull() {
         let result = BottomPanelSnapResolver.resolve(
             current: .island,
@@ -322,7 +344,7 @@ struct BottomPanelStateTests {
             isAccessibilitySize: false
         )
 
-        #expect(collapsedHeight == 145)
+        #expect(collapsedHeight == 159)
     }
 
     @Test

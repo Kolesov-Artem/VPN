@@ -81,6 +81,7 @@ struct VPNNetworksIslandPanel: View {
             .overlay(alignment: .top) {
                 Color.clear
                     .frame(width: proxy.size.width, height: viewportHeight)
+                    .allowsHitTesting(false)
                     .overlay(alignment: .bottom) {
                         if searchRevealProgress > 0.01 {
                             PanelLocationSearchControls(

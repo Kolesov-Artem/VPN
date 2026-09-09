@@ -1,14 +1,23 @@
 import SwiftUI
 import UIKit
 
+/// Context for panel-height drags while content scrolling is disabled.
+struct PanelResizeContext: Equatable {
+    let baseHeight: CGFloat
+    let minHeight: CGFloat
+    let maxHeight: CGFloat
+}
+
 /// UIKit scroll container that owns vertical scrolling and only forwards downward
 /// pans to the panel resize handler when content is at the top (or scroll is off).
 struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
     let isScrollEnabled: Bool
     let bottomContentInset: CGFloat
+    let panelResizeContext: PanelResizeContext?
     @Binding var isScrollAtTop: Bool
     @Binding var scrollEdgeProgress: CGFloat
     let onPanelDragChanged: (CGFloat) -> Void
+    let onPanelExpandedDuringDrag: (() -> Void)?
     let onPanelDragEnded: (_ translation: CGFloat, _ predicted: CGFloat) -> Void
     @ViewBuilder let content: () -> Content
 
@@ -16,6 +25,7 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
         let controller = PanelScrollViewController(rootView: content())
         controller.isScrollEnabled = isScrollEnabled
         controller.bottomContentInset = bottomContentInset
+        controller.panelResizeContext = panelResizeContext
         controller.onScrollStateChanged = { atTop, progress in
             if isScrollAtTop != atTop {
                 isScrollAtTop = atTop
@@ -25,14 +35,17 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
             }
         }
         controller.onPanelDragChanged = onPanelDragChanged
+        controller.onPanelExpandedDuringDrag = onPanelExpandedDuringDrag
         controller.onPanelDragEnded = onPanelDragEnded
         return controller
     }
 
     func updateUIViewController(_ controller: PanelScrollViewController<Content>, context: Context) {
-        controller.rootView = content()
+        let preservedOffset = controller.currentContentOffset
+
         controller.isScrollEnabled = isScrollEnabled
         controller.bottomContentInset = bottomContentInset
+        controller.panelResizeContext = panelResizeContext
         controller.onScrollStateChanged = { atTop, progress in
             if isScrollAtTop != atTop {
                 isScrollAtTop = atTop
@@ -42,8 +55,9 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
             }
         }
         controller.onPanelDragChanged = onPanelDragChanged
+        controller.onPanelExpandedDuringDrag = onPanelExpandedDuringDrag
         controller.onPanelDragEnded = onPanelDragEnded
-        controller.refreshHostedContent()
+        controller.updateHostedContent(content(), preservingOffset: preservedOffset)
     }
 }
 
@@ -57,15 +71,24 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         didSet { applyContentInset() }
     }
 
+    var panelResizeContext: PanelResizeContext?
+
     var onScrollStateChanged: ((Bool, CGFloat) -> Void)?
     var onPanelDragChanged: ((CGFloat) -> Void)?
+    var onPanelExpandedDuringDrag: (() -> Void)?
     var onPanelDragEnded: ((_ translation: CGFloat, _ predicted: CGFloat) -> Void)?
+
+    var currentContentOffset: CGPoint {
+        scrollView.contentOffset
+    }
 
     private let scrollView = UIScrollView()
     private var hostingController: UIHostingController<Content>!
     private var panelPan: UIPanGestureRecognizer!
     private var isForwardingPanelPan = false
-    private var contentHeightConstraint: NSLayoutConstraint?
+    private var isHandedOffToScroll = false
+    private var activeResizeContext: PanelResizeContext?
+    private var minContentHeightConstraint: NSLayoutConstraint?
 
     init(rootView: Content) {
         self.rootView = rootView
@@ -88,6 +111,7 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.keyboardDismissMode = .interactive
         scrollView.alwaysBounceVertical = true
+        scrollView.delaysContentTouches = false
         scrollView.contentInsetAdjustmentBehavior = .never
         view.addSubview(scrollView)
 
@@ -101,19 +125,28 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         hostingController = UIHostingController(rootView: rootView)
         hostingController.view.backgroundColor = .clear
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        hostingController.safeAreaRegions = []
+        if #available(iOS 16.0, *) {
+            hostingController.sizingOptions = [.intrinsicContentSize]
+        }
         addChild(hostingController)
         scrollView.addSubview(hostingController.view)
         hostingController.didMove(toParent: self)
+
+        minContentHeightConstraint = hostingController.view.heightAnchor.constraint(
+            greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor,
+            constant: 0
+        )
+        minContentHeightConstraint?.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             hostingController.view.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             hostingController.view.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
             hostingController.view.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             hostingController.view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            minContentHeightConstraint!,
         ])
-
-        contentHeightConstraint = hostingController.view.heightAnchor.constraint(greaterThanOrEqualToConstant: 0)
-        contentHeightConstraint?.isActive = true
 
         panelPan = UIPanGestureRecognizer(target: self, action: #selector(handlePanelPan(_:)))
         panelPan.delegate = self
@@ -126,16 +159,17 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let minHeight = max(scrollView.bounds.height - bottomContentInset, 0)
-        contentHeightConstraint?.constant = minHeight
+        minContentHeightConstraint?.constant = -bottomContentInset
         hostingController.view.invalidateIntrinsicContentSize()
     }
 
-    func refreshHostedContent() {
-        hostingController.rootView = rootView
-        hostingController.view.setNeedsLayout()
-        hostingController.view.layoutIfNeeded()
+    func updateHostedContent(_ content: Content, preservingOffset: CGPoint) {
+        rootView = content
+        hostingController.rootView = content
         view.setNeedsLayout()
+        view.layoutIfNeeded()
+        scrollView.contentOffset = preservingOffset
+        reportScrollState()
     }
 
     func scrollToTop(animated: Bool) {
@@ -146,8 +180,8 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     private func applyScrollEnabled() {
         scrollView.isScrollEnabled = isScrollEnabled
         scrollView.alwaysBounceVertical = isScrollEnabled
-        scrollView.panGestureRecognizer.isEnabled = isScrollEnabled
-        if !isScrollEnabled {
+        scrollView.panGestureRecognizer.isEnabled = isScrollEnabled && !isForwardingPanelPan
+        if !isScrollEnabled, !isHandedOffToScroll {
             scrollView.setContentOffset(.zero, animated: false)
         }
         reportScrollState()
@@ -166,7 +200,7 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        if isForwardingPanelPan, scrollView.contentOffset.y != 0 {
+        if isForwardingPanelPan, !isHandedOffToScroll, scrollView.contentOffset.y != 0 {
             scrollView.contentOffset.y = 0
         }
         reportScrollState()
@@ -181,20 +215,73 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         case .began:
             guard shouldBeginPanelPan(pan) else { return }
             isForwardingPanelPan = true
-            scrollView.isScrollEnabled = false
+            isHandedOffToScroll = false
+            activeResizeContext = panelResizeContext
             scrollView.panGestureRecognizer.isEnabled = false
+            if !isScrollEnabled {
+                scrollView.isScrollEnabled = false
+            }
         case .changed:
             guard isForwardingPanelPan else { return }
-            scrollView.contentOffset.y = 0
-            onPanelDragChanged?(translation)
+            if !isScrollEnabled {
+                handleResizePanChanged(translation: translation)
+            } else if isHandedOffToScroll {
+                handleHandedOffPanChanged(translation: translation)
+            } else {
+                scrollView.contentOffset.y = 0
+                onPanelDragChanged?(translation)
+            }
         case .ended, .cancelled, .failed:
             guard isForwardingPanelPan else { return }
             onPanelDragEnded?(translation, predicted)
             isForwardingPanelPan = false
+            isHandedOffToScroll = false
+            activeResizeContext = nil
             applyScrollEnabled()
         default:
             break
         }
+    }
+
+    private func handleResizePanChanged(translation: CGFloat) {
+        guard let context = activeResizeContext ?? panelResizeContext else {
+            scrollView.contentOffset.y = 0
+            onPanelDragChanged?(translation)
+            return
+        }
+
+        let rawHeight = context.baseHeight - translation
+        let panelTranslation = context.baseHeight - context.maxHeight
+
+        if rawHeight >= context.maxHeight, translation < 0 {
+            if !isHandedOffToScroll {
+                isHandedOffToScroll = true
+                scrollView.isScrollEnabled = true
+                scrollView.panGestureRecognizer.isEnabled = true
+                onPanelDragChanged?(panelTranslation)
+                onPanelExpandedDuringDrag?()
+            }
+            let overflow = rawHeight - context.maxHeight
+            scrollView.contentOffset.y = overflow
+            reportScrollState()
+        } else {
+            if isHandedOffToScroll {
+                isHandedOffToScroll = false
+                scrollView.isScrollEnabled = false
+                scrollView.panGestureRecognizer.isEnabled = false
+                scrollView.contentOffset.y = 0
+            }
+            onPanelDragChanged?(translation)
+        }
+    }
+
+    private func handleHandedOffPanChanged(translation: CGFloat) {
+        guard let context = activeResizeContext ?? panelResizeContext else { return }
+
+        let rawHeight = context.baseHeight - translation
+        let overflow = max(rawHeight - context.maxHeight, 0)
+        scrollView.contentOffset.y = overflow
+        reportScrollState()
     }
 
     private func shouldBeginPanelPan(_ pan: UIPanGestureRecognizer) -> Bool {
@@ -221,6 +308,12 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        otherGestureRecognizer === scrollView.panGestureRecognizer
+        if otherGestureRecognizer === scrollView.panGestureRecognizer {
+            return true
+        }
+        if gestureRecognizer === panelPan, otherGestureRecognizer is UIPanGestureRecognizer {
+            return true
+        }
+        return false
     }
 }
