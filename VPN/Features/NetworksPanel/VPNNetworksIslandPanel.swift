@@ -71,8 +71,8 @@ struct VPNNetworksIslandPanel: View {
                 onDismissSearch: { searchIsFocused = false }
             ) { context in
                 networksPanelHeader(context: context)
-            } stats: {
-                connectionStatsStrip
+            } stats: { context in
+                connectionInfoBlock(context: context)
             } footer: {
                 connectionButton
             } scrollContent: { context in
@@ -192,41 +192,30 @@ struct VPNNetworksIslandPanel: View {
     }
 
     @ViewBuilder
-    private var connectionStatsStrip: some View {
-        if position == .island {
-            if connectionState == .connected {
-                ConnectionStatsStrip(
+    private func connectionInfoBlock(context: BottomPanelCurtainContext) -> some View {
+        let showsBlock = connectionState == .connected || context.isStatsExpanded
+
+        if showsBlock {
+            AnimatedPanelStatsReveal(context: context) { reveal in
+                VPNProviderMessageCard(
+                    provider: displayProvider,
                     regionLabel: statsRegionLabel,
                     pingMs: pingMs,
                     downloadRate: downloadRate,
                     uploadRate: uploadRate,
                     usageFraction: usageFraction,
-                    sessionDataUsedText: sessionDataUsedText,
-                    onTap: nil
+                    usageTrailingLabel: usageTrailingLabel,
+                    revealProgress: reveal,
+                    showsVelvetPromo: displayProvider.kind == .imported,
+                    showsProvidersList: providerStore.showsProviderPicker,
+                    onStatsTap: context.isStatsExpanded ? { showsInfoSheet = true } : nil,
+                    onVelvetPromoTap: openVelvetPaywall,
+                    onOpenProvider: { detailProviderID = ProviderDetailRoute(id: $0) },
+                    providerStore: providerStore
                 )
-                .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
-                .padding(.top, VelvetMetrics.collapsedSectionSpacing)
             }
-        } else {
-            providerStatusCard
-                .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
-                .padding(.top, VelvetMetrics.collapsedSectionSpacing)
+            .padding(.top, VelvetMetrics.infoBlockTopSpacing)
         }
-    }
-
-    private var providerStatusCard: some View {
-        VPNProviderMessageCard(
-            provider: displayProvider,
-            regionLabel: statsRegionLabel,
-            pingMs: pingMs,
-            downloadRate: downloadRate,
-            uploadRate: uploadRate,
-            usageFraction: usageFraction,
-            usageTrailingLabel: usageTrailingLabel,
-            showsVelvetPromo: displayProvider.kind == .imported,
-            onStatsTap: { showsInfoSheet = true },
-            onVelvetPromoTap: openVelvetPaywall
-        )
     }
 
     private var usageTrailingLabel: String {
@@ -303,34 +292,19 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private func networksAndLocationsContent(layout: BottomPanelVisualState) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if providerStore.showsProviderPicker {
-                paddedSection {
-                    networksCard
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                paddedSection {
-                    VPNPanelSectionHeader(title: "All locations")
-                    allLocationsCard
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            paddedSection {
+                VPNPanelSectionHeader(title: "All locations")
+                allLocationsCard
             }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(VelvetMotion.contentCrossfade(reduceMotion: reduceMotion), value: providerStore.showsProviderPicker)
     }
 
     private func paddedSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .padding(.horizontal, VelvetTheme.horizontalPadding)
-    }
-
-    private var networksCard: some View {
-        VPNCompactNetworksCard(providerStore: providerStore) { providerID in
-            detailProviderID = ProviderDetailRoute(id: providerID)
-        }
     }
 
     private var allLocationsCard: some View {

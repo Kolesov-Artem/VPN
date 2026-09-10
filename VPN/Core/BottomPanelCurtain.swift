@@ -10,6 +10,10 @@ struct BottomPanelCurtainContext {
 
     let collapseExpanded: () -> Void
     let togglePosition: () -> Void
+
+    var isStatsExpanded: Bool {
+        position != .island
+    }
 }
 
 /// Unified bottom panel shell: grip resize, fixed chrome, coordinated scroll, footer slot.
@@ -25,7 +29,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     var onDismissSearch: (() -> Void)?
 
     @ViewBuilder let header: (BottomPanelCurtainContext) -> Header
-    @ViewBuilder let stats: () -> Stats
+    @ViewBuilder let stats: (BottomPanelCurtainContext) -> Stats
     @ViewBuilder let footer: () -> Footer
     @ViewBuilder let scrollContent: (BottomPanelCurtainContext) -> ScrollContent
 
@@ -238,7 +242,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         .allowsHitTesting(!isDraggingPanel)
         .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
 
-        stats()
+        stats(context)
             .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
     }
 
@@ -275,7 +279,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 header(context)
                     .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress < 0.5)
 
-                stats()
+                stats(context)
 
                 scrollContent(context)
                     .opacity(listOpacity)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Tappable upsell shown inside the provider status card for third-party VPNs.
+/// Tappable upsell shown inside the provider status block for third-party VPNs.
 struct VelvetPromoBanner: View {
     let action: () -> Void
 
@@ -31,8 +31,8 @@ struct VelvetPromoBanner: View {
     }
 }
 
-/// Unified provider status block for a single subscription: session stats plus
-/// provider announcements in one white card (Figma curtain layout).
+/// Session stats plus provider announcements. Collapsed: extra 8pt inset, no substrate.
+/// Expanded: grouped card with white surface; extra rows reveal with panel progress.
 struct VPNProviderMessageCard: View {
     let provider: VPNProvider
     let regionLabel: String
@@ -41,26 +41,87 @@ struct VPNProviderMessageCard: View {
     let uploadRate: String
     let usageFraction: Double
     let usageTrailingLabel: String
+    var revealProgress: CGFloat = 1
     var showsVelvetPromo: Bool = false
+    var showsProvidersList: Bool = false
     var onStatsTap: (() -> Void)? = nil
     var onVelvetPromoTap: (() -> Void)? = nil
+    var onOpenProvider: ((UUID) -> Void)? = nil
+
+    @Bindable var providerStore: VPNProviderStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ConnectionStatsStrip(
-                regionLabel: regionLabel,
-                pingMs: pingMs,
-                downloadRate: downloadRate,
-                uploadRate: uploadRate,
-                usageFraction: usageFraction,
-                sessionDataUsedText: usageTrailingLabel,
-                showsBackground: true,
-                usesContentPadding: true,
-                cornerRadius: VelvetMetrics.nestedStatsStripCornerRadius,
-                progressTint: .primary,
-                onTap: onStatsTap
-            )
+        let detailsReveal = VelvetMotion.revealStep(revealProgress)
 
+        VStack(alignment: .leading, spacing: VelvetMetrics.infoBlockSectionSpacing) {
+            ConnectionStatsRevealShell(revealProgress: revealProgress) {
+                ConnectionStatsStrip(
+                    regionLabel: regionLabel,
+                    pingMs: pingMs,
+                    downloadRate: downloadRate,
+                    uploadRate: uploadRate,
+                    usageFraction: usageFraction,
+                    sessionDataUsedText: usageTrailingLabel,
+                    showsBackground: false,
+                    usesContentPadding: false,
+                    progressTint: detailsReveal > 0.45 ? .primary : VelvetTheme.accent,
+                    onTap: onStatsTap
+                )
+            } details: {
+                if hasExpandedDetailsContent {
+                    expandedDetailsSectionLayout
+                        .opacity(detailsReveal)
+                        .scaleEffect(
+                            x: 1,
+                            y: max(detailsReveal, 0.001),
+                            anchor: .top
+                        )
+                        .allowsHitTesting(detailsReveal > 0.85)
+                }
+            }
+
+            if showsProvidersList, let onOpenProvider, detailsReveal > 0.01 {
+                VPNCompactNetworksCard(
+                    providerStore: providerStore,
+                    showsBackground: true,
+                    cornerRadius: VelvetMetrics.statsStripExpandedCardCornerRadius,
+                    contentHorizontalPadding: VelvetMetrics.providersCardHorizontalPadding,
+                    summaryTitle: "All \(providerStore.providers.count) providers",
+                    onOpenProvider: onOpenProvider
+                )
+                .opacity(detailsReveal)
+                .scaleEffect(
+                    x: 1,
+                    y: max(detailsReveal, 0.001),
+                    anchor: .top
+                )
+                .allowsHitTesting(detailsReveal > 0.85)
+            }
+        }
+        .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var hasExpandedDetailsContent: Bool {
+        showsVelvetPromo || (provider.hasProviderMessage && provider.providerMessage != nil)
+    }
+
+    private var expandedDetailsSectionLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+                .padding(.vertical, VelvetMetrics.statsStripSectionPadding)
+
+            expandedDetailsContent
+                .padding(.horizontal, VelvetMetrics.statsStripSectionPadding)
+                .padding(.bottom, VelvetMetrics.statsStripSectionPadding)
+        }
+    }
+
+    @ViewBuilder
+    private var expandedDetailsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if showsVelvetPromo, let onVelvetPromoTap {
                 VelvetPromoBanner(action: onVelvetPromoTap)
             }
@@ -73,14 +134,6 @@ struct VPNProviderMessageCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(VelvetMetrics.contentSurfaceInnerPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            VelvetTheme.contentSurface,
-            in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var accessibilityLabel: String {

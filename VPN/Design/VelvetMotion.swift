@@ -115,6 +115,12 @@ enum VelvetMotion {
         easeOut(duration: reduceMotion ? 0.12 : quickDuration)
     }
 
+    /// Smoothstep for panel reveal-driven content (island → intermediate).
+    static func revealStep(_ value: CGFloat, from: CGFloat = 0.12, to: CGFloat = 0.88) -> CGFloat {
+        let progress = min(max((value - from) / max(to - from, 0.001), 0), 1)
+        return progress * progress * (3 - 2 * progress)
+    }
+
     /// Panel detent spring settle — used to gate scroll enablement.
     static var panelSettleDelay: Duration {
         .seconds(0.35)

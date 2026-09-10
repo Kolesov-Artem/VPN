@@ -43,8 +43,8 @@ struct VPNIslandPanel: View {
                 onDismissSearch: { searchIsFocused = false }
             ) { context in
                 panelHeader(context: context)
-            } stats: {
-                connectionStatsStrip
+            } stats: { context in
+                connectionStatsStrip(context: context)
             } footer: {
                 connectionButton
             } scrollContent: { context in
@@ -105,19 +105,29 @@ struct VPNIslandPanel: View {
     }
 
     @ViewBuilder
-    private var connectionStatsStrip: some View {
+    private func connectionStatsStrip(context: BottomPanelCurtainContext) -> some View {
         if connectionState == .connected {
-            ConnectionStatsStrip(
-                regionLabel: selectedLocation.name,
-                pingMs: pingMs,
-                downloadRate: downloadRate,
-                uploadRate: uploadRate,
-                usageFraction: usageFraction,
-                sessionDataUsedText: sessionDataUsedText,
-                onTap: position == .island ? nil : onShowConnectionInfo
-            )
+            AnimatedPanelStatsReveal(context: context) { reveal in
+                ConnectionStatsRevealShell(revealProgress: reveal) {
+                    ConnectionStatsStrip(
+                        regionLabel: selectedLocation.name,
+                        pingMs: pingMs,
+                        downloadRate: downloadRate,
+                        uploadRate: uploadRate,
+                        usageFraction: usageFraction,
+                        sessionDataUsedText: sessionDataUsedText,
+                        usesContentPadding: false,
+                        progressTint: VelvetMotion.revealStep(reveal) > 0.45
+                            ? .primary
+                            : VelvetTheme.accent,
+                        onTap: context.isStatsExpanded ? onShowConnectionInfo : nil
+                    )
+                } details: {
+                    EmptyView()
+                }
+            }
             .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
-            .padding(.top, VelvetMetrics.collapsedSectionSpacing)
+            .padding(.top, VelvetMetrics.infoBlockTopSpacing)
         }
     }
 

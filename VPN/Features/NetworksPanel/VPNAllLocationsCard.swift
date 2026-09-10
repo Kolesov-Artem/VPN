@@ -70,27 +70,32 @@ struct VPNAllLocationsCard: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                Group {
-                    if let smartLocation {
-                        Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
-                        smartLocationRow(smartLocation, country: group.name)
-                    }
-
-                    ForEach(group.candidates) { candidate in
-                        Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
-                        Button {
-                            onManualLocation(candidate)
-                        } label: {
-                            candidateRow(candidate)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                expandedGroupContent(group, smartLocation: smartLocation)
+                    .transition(.identity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isExpanded)
-        .clipped()
+        .animation(nil, value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func expandedGroupContent(
+        _ group: VPNCountryLocationGroup,
+        smartLocation: VPNSmartCountryLocation?
+    ) -> some View {
+        if let smartLocation {
+            Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
+            smartLocationRow(smartLocation, country: group.name)
+        }
+
+        ForEach(group.candidates) { candidate in
+            Divider().padding(.leading, VelvetMetrics.nestedDividerInset)
+            Button {
+                onManualLocation(candidate)
+            } label: {
+                candidateRow(candidate)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private func smartLocationRow(_ smartLocation: VPNSmartCountryLocation, country: String) -> some View {
@@ -188,10 +193,14 @@ struct VPNAllLocationsCard: View {
     }
 
     private func toggleGroupExpansion(_ id: String) {
-        if expandedGroupIDs.contains(id) {
-            expandedGroupIDs.remove(id)
-        } else {
-            expandedGroupIDs.insert(id)
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            if expandedGroupIDs.contains(id) {
+                expandedGroupIDs.remove(id)
+            } else {
+                expandedGroupIDs.insert(id)
+            }
         }
     }
 

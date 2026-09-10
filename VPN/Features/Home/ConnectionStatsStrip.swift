@@ -8,7 +8,7 @@ struct ConnectionStatsStrip: View {
     let uploadRate: String
     var usageFraction: Double = 0
     var sessionDataUsedText: String = "0 MB this session"
-    var showsBackground: Bool = true
+    var showsBackground: Bool = false
     var usesContentPadding: Bool = true
     var cornerRadius: CGFloat = VelvetMetrics.statsStripCornerRadius
     var progressTint: Color = VelvetTheme.accent
@@ -192,6 +192,94 @@ struct ConnectionStatsStrip: View {
         let parts = rate.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
         guard parts.count == 2 else { return (rate, "") }
         return (String(parts[0]), String(parts[1]))
+    }
+}
+
+/// Drives stats reveal with panel motion: follows the finger while dragging,
+/// springs when the detent settles.
+struct AnimatedPanelStatsReveal<Content: View>: View {
+    let context: BottomPanelCurtainContext
+    @ViewBuilder let content: (CGFloat) -> Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealProgress: CGFloat = 0
+    @State private var didInitialize = false
+
+    private var desiredReveal: CGFloat {
+        guard context.isStatsExpanded else { return 0 }
+        if context.isDraggingPanel {
+            return context.layout.revealProgress
+        }
+        return 1
+    }
+
+    var body: some View {
+        content(revealProgress)
+            .onChange(of: desiredReveal, initial: true) { _, target in
+                guard didInitialize else {
+                    revealProgress = target
+                    didInitialize = true
+                    return
+                }
+                applyReveal(target)
+            }
+    }
+
+    private func applyReveal(_ target: CGFloat) {
+        if context.isDraggingPanel {
+            revealProgress = target
+            return
+        }
+
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            revealProgress = target
+        }
+    }
+}
+
+/// Morphs stats padding and substrate with panel reveal (island → intermediate).
+///
+/// Collapsed: 8pt inset, no card. Expanded: 12pt card padding with white surface,
+/// each section inset 8pt (Figma grouped table view).
+struct ConnectionStatsRevealShell<Details: View>: View {
+    var revealProgress: CGFloat = 0
+    @ViewBuilder var stats: () -> ConnectionStatsStrip
+    @ViewBuilder var details: () -> Details
+
+    var body: some View {
+        let reveal = VelvetMotion.revealStep(revealProgress)
+        let cardPadding = VelvetMetrics.statsStripCollapsedInset * (1 - reveal)
+            + VelvetMetrics.statsStripExpandedCardPadding * reveal
+        let sectionPadding = VelvetMetrics.statsStripSectionPadding * reveal
+
+        VStack(alignment: .leading, spacing: 0) {
+            stats()
+                .padding(
+                    EdgeInsets(
+                        top: sectionPadding,
+                        leading: sectionPadding,
+                        bottom: detailsVisible(reveal) ? 0 : sectionPadding,
+                        trailing: sectionPadding
+                    )
+                )
+
+            if detailsVisible(reveal) {
+                details()
+            }
+        }
+        .padding(cardPadding)
+        .background {
+            RoundedRectangle(
+                cornerRadius: VelvetMetrics.statsStripExpandedCardCornerRadius,
+                style: .continuous
+            )
+            .fill(VelvetTheme.contentSurface)
+            .opacity(reveal)
+        }
+    }
+
+    private func detailsVisible(_ reveal: CGFloat) -> Bool {
+        reveal > 0.01
     }
 }
 

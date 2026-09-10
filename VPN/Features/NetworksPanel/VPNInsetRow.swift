@@ -89,6 +89,7 @@ struct VPNInsetRow: View {
                 Image(systemName: isDisclosureExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .animation(nil, value: isDisclosureExpanded)
             }
         }
     }

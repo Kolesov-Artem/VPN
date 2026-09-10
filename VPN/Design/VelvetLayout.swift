@@ -33,6 +33,19 @@ enum VelvetMetrics {
     static let primaryButtonHeight: CGFloat = 56
     static let searchControlHeight: CGFloat = 50
     static let statsStripPadding = EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+    /// Inset around stats in the collapsed island (Figma: 8pt inside the panel).
+    static let statsStripCollapsedInset: CGFloat = 8
+    /// Padding inside the grouped stats card edge (Figma: 12pt).
+    static let statsStripExpandedCardPadding: CGFloat = 12
+    static let statsStripExpandedCardCornerRadius: CGFloat = 24
+    /// Padding inside each stats-card section (Figma: 8pt).
+    static let statsStripSectionPadding: CGFloat = 8
+    /// Gap between the stats card and the providers card (Figma: 12pt).
+    static let infoBlockSectionSpacing: CGFloat = 12
+    /// Gap between the panel header and the info block (Figma: ~12pt).
+    static let infoBlockTopSpacing: CGFloat = 12
+    /// Horizontal padding inside the providers summary card (Figma: 24pt).
+    static let providersCardHorizontalPadding: CGFloat = 24
     static let statsStripCornerRadius: CGFloat = 20
     static let contentSurfaceCornerRadius: CGFloat = 20
     /// Inset between a content-surface card edge and a nested block (e.g. stats strip).
@@ -51,7 +64,8 @@ enum VelvetMetrics {
     static let statsStripProgressCornerRadius: CGFloat = 3
     static let statsStripPingPlaceholder = "000 ms"
     static let statsStripRatePlaceholder = "000 MB/s"
-    static let statsStripCollapsedHeight: CGFloat = 106
+    /// Collapsed stats block: 8pt inset × 2 + usage/progress/grid content.
+    static let statsStripCollapsedHeight: CGFloat = 102
     static let statsStripEstimatedHeight: CGFloat = statsStripCollapsedHeight
     static let panelHeaderRowHeight: CGFloat = 44
     static let expandedPanelHeaderHeight: CGFloat = 56
@@ -149,7 +163,7 @@ enum VelvetCollapsedIslandLayout {
             + VelvetMetrics.collapsedHeaderBottomPadding
         guard showsSessionStats else { return headerBlock }
         return headerBlock
-            + VelvetMetrics.collapsedSectionSpacing
+            + VelvetMetrics.infoBlockTopSpacing
             + VelvetMetrics.statsStripCollapsedHeight
     }
 

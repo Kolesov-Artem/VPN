@@ -3,13 +3,21 @@ import SwiftUI
 /// Collapsed summary of subscriptions; expand for provider rows (renew / messages).
 struct VPNCompactNetworksCard: View {
     @Bindable var providerStore: VPNProviderStore
+    var showsBackground: Bool = true
+    var cornerRadius: CGFloat = VelvetMetrics.contentSurfaceCornerRadius
+    var contentHorizontalPadding: CGFloat = 16
+    var summaryTitle: String?
     let onOpenProvider: (UUID) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = false
 
     private var providers: [VPNProvider] { providerStore.providers }
 
-    private var summaryTitle: String {
+    private var resolvedSummaryTitle: String {
+        if let summaryTitle {
+            return summaryTitle
+        }
         let count = providers.count
         let providerWord = count == 1 ? "provider" : "providers"
         return "\(count) VPN \(providerWord)"
@@ -22,10 +30,12 @@ struct VPNCompactNetworksCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                isExpanded.toggle()
+                withAnimation(VelvetMotion.accordion(reduceMotion: reduceMotion)) {
+                    isExpanded.toggle()
+                }
             } label: {
                 HStack(spacing: 8) {
-                    Text(summaryTitle)
+                    Text(resolvedSummaryTitle)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -38,12 +48,13 @@ struct VPNCompactNetworksCard: View {
 
                     Spacer(minLength: 4)
 
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.horizontal, showsBackground ? contentHorizontalPadding : 0)
+                .padding(.vertical, showsBackground ? 16 : 10)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -53,15 +64,27 @@ struct VPNCompactNetworksCard: View {
                     providerRow(provider)
 
                     if index < providers.count - 1 {
-                        Divider().padding(.leading, 16)
+                        Divider().padding(.leading, showsBackground ? contentHorizontalPadding : 0)
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(
+                    .opacity.combined(with: .offset(y: -6))
+                )
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+        .animation(VelvetMotion.accordion(reduceMotion: reduceMotion), value: isExpanded)
         .clipped()
-        .background(VelvetTheme.contentSurface, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
+        .background {
+            if showsBackground {
+                VelvetTheme.contentSurface
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: cornerRadius,
+                            style: .continuous
+                        )
+                    )
+            }
+        }
     }
 
     private func providerRow(_ provider: VPNProvider) -> some View {
@@ -118,7 +141,7 @@ struct VPNCompactNetworksCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, showsBackground ? contentHorizontalPadding : 0)
             .padding(.vertical, 11)
             .contentShape(Rectangle())
         }
