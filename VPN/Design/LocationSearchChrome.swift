@@ -1,21 +1,37 @@
 import SwiftUI
+import UIKit
 
 enum LocationSearchChrome {
     /// Shared height for the search capsule and filter circle.
     static let controlHeight: CGFloat = 50
     static let fieldHorizontalPadding: CGFloat = 16
-    static let rowHorizontalPadding: CGFloat = 20
-    static let rowVerticalPadding: CGFloat = 10
+    /// Side inset for the floating search row, matching Settings tab search.
+    static let rowHorizontalPadding: CGFloat = 16
+    static let rowVerticalPadding: CGFloat = 8
+    /// Extra blur feather above the search pill when content scrolls underneath.
+    static let panelSearchBlurExtension: CGFloat = 40
     /// Breathing room when the panel floats above the home indicator.
     static let extraBottomInset: CGFloat = 8
 
-    /// Fixed offset from the screen bottom for the search dock across all detents.
+    /// Fixed offset from the screen bottom for legacy screen-anchored docks.
     static func screenBottomOffset(panelBottomMargin: CGFloat) -> CGFloat {
         panelBottomMargin + extraBottomInset
     }
 
+    /// Home-indicator clearance when the search dock lives inside the panel card.
+    static func panelSearchBottomInset(safeAreaBottom: CGFloat) -> CGFloat {
+        max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
+    }
+
+    static func chromeHeight(bottomMargin: CGFloat) -> CGFloat {
+        controlHeight
+            + rowVerticalPadding * 2
+            + panelSearchBlurExtension
+            + bottomMargin
+    }
+
     static func barHeight(bottomMargin: CGFloat) -> CGFloat {
-        controlHeight + rowVerticalPadding * 2 + bottomMargin
+        chromeHeight(bottomMargin: bottomMargin)
     }
 
     static func scrollBottomPadding(
@@ -76,7 +92,7 @@ struct LocationSearchBar: View {
         if #available(iOS 26.0, *), !reduceTransparency {
             .glass
         } else {
-            .capsule
+            .floating
         }
     }
 }
@@ -88,15 +104,40 @@ struct PanelLocationSearchControls: View {
     let bottomMargin: CGFloat
     let safeAreaBottom: CGFloat
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var chromeHeight: CGFloat {
+        LocationSearchChrome.chromeHeight(bottomMargin: bottomMargin)
+    }
+
     var body: some View {
-        LocationSearchBar(query: $query, isFocused: isFocused)
-            .padding(.bottom, bottomMargin)
-            .modifier(
-                LocationSearchKeyboardLift(
-                    isFocused: isFocused,
-                    safeAreaBottom: safeAreaBottom
-                )
+        ZStack(alignment: .bottom) {
+            scrollEdgeBackground
+                .frame(height: chromeHeight)
+                .frame(maxWidth: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+
+            LocationSearchBar(query: $query, isFocused: isFocused)
+                .padding(.bottom, bottomMargin)
+        }
+        .modifier(
+            LocationSearchKeyboardLift(
+                isFocused: isFocused,
+                safeAreaBottom: safeAreaBottom
             )
+        )
+    }
+
+    @ViewBuilder
+    private var scrollEdgeBackground: some View {
+        if reduceTransparency {
+            Color(.systemBackground)
+        } else {
+            TelegramScrollEdgeBackground(
+                edge: .bottom,
+                strength: .navigationBar
+            )
+        }
     }
 }
 
@@ -125,22 +166,90 @@ extension View {
     }
 }
 
+/// Floating pill chrome like the Settings tab search bar on pre-glass OS versions.
+struct LocationSearchFloatingChrome<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let reduceTransparency: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                floatingFill
+            }
+            .overlay {
+                shape.strokeBorder(strokeColor, lineWidth: 0.5)
+            }
+            .shadow(color: shadowColor, radius: 16, y: 4)
+    }
+
+    @ViewBuilder
+    private var floatingFill: some View {
+        if reduceTransparency {
+            shape.fill(Color(.secondarySystemGroupedBackground))
+        } else {
+            ZStack {
+                shape.fill(.thinMaterial)
+                shape.fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.22 : 0.52))
+            }
+        }
+    }
+
+    private var strokeColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.14)
+            : Color.white.opacity(0.72)
+    }
+
+    private var shadowColor: Color {
+        colorScheme == .dark
+            ? Color.black.opacity(0.38)
+            : Color.black.opacity(0.12)
+    }
+}
+
+@available(iOS 26.0, *)
+struct LocationSearchGlassChrome<S: InsettableShape>: ViewModifier {
+    let shape: S
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .glassEffect(
+                .regular
+                    .tint(Color(.systemBackground).opacity(colorScheme == .dark ? 0.22 : 0.48))
+                    .interactive(),
+                in: shape
+            )
+            .clipShape(shape)
+            .overlay {
+                shape.strokeBorder(
+                    colorScheme == .dark
+                        ? Color.white.opacity(0.16)
+                        : Color.white.opacity(0.78),
+                    lineWidth: 0.5
+                )
+            }
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.1),
+                radius: 14,
+                y: 4
+            )
+    }
+}
+
 private struct LocationSearchFieldChrome: ViewModifier {
     let reduceTransparency: Bool
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *), !reduceTransparency {
-            content
-                .glassEffect(.regular.interactive(), in: Capsule())
-                .clipShape(Capsule())
+            content.modifier(LocationSearchGlassChrome(shape: Capsule()))
         } else {
-            content.background {
-                if reduceTransparency {
-                    Capsule().fill(Color(.tertiarySystemFill))
-                } else {
-                    Capsule().fill(.ultraThinMaterial)
-                }
-            }
+            content.modifier(
+                LocationSearchFloatingChrome(shape: Capsule(), reduceTransparency: reduceTransparency)
+            )
         }
     }
 }

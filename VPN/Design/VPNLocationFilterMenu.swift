@@ -5,6 +5,8 @@ enum VPNLocationFilterMenuStyle {
     case glass
     /// Material search row on iOS 17.
     case capsule
+    /// Floating circle matching the Settings-style search pill.
+    case floating
 }
 
 /// Shared filter and sort menu for the location list search chrome.
@@ -53,9 +55,28 @@ struct VPNLocationFilterMenu: View {
         .accessibilityLabel("Filter and sort servers")
     }
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     @ViewBuilder
     private var filterButtonLabel: some View {
         switch style {
+        case .floating:
+            if query.isDefault {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: controlSize, height: controlSize)
+                    .modifier(
+                        LocationSearchFloatingChrome(shape: Circle(), reduceTransparency: reduceTransparency)
+                    )
+            } else {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: controlSize, height: controlSize)
+                    .background(VelvetTheme.accent, in: Circle())
+                    .shadow(color: Color.black.opacity(0.16), radius: 12, y: 3)
+            }
         case .glass:
             if #available(iOS 26.0, *) {
                 if query.isDefault {
@@ -63,8 +84,7 @@ struct VPNLocationFilterMenu: View {
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(Color.primary)
                         .frame(width: controlSize, height: controlSize)
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .clipShape(Circle())
+                        .modifier(LocationSearchGlassChrome(shape: Circle()))
                 } else {
                     Image(systemName: "line.3.horizontal.decrease")
                         .font(.title3.weight(.semibold))

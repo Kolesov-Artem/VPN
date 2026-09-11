@@ -17,7 +17,7 @@ struct BottomPanelCurtainContext {
 }
 
 /// Unified bottom panel shell: grip resize, fixed chrome, coordinated scroll, footer slot.
-struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent: View>: View {
+struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent: View, SearchDock: View>: View {
     @Binding var position: BottomPanelPosition
     @Binding var isPanelInteracting: Bool
 
@@ -32,8 +32,10 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     @ViewBuilder let stats: (BottomPanelCurtainContext) -> Stats
     @ViewBuilder let footer: () -> Footer
     @ViewBuilder let scrollContent: (BottomPanelCurtainContext) -> ScrollContent
+    @ViewBuilder let searchDock: () -> SearchDock
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var dragTranslation: CGFloat = 0
@@ -43,6 +45,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     @State private var isScrollAtTop = true
     @State private var scrollEdgeProgress: CGFloat = 0
     @State private var scrollResetToken = UUID()
+    @State private var panelScrollViewHandle = PanelScrollViewHandle()
 
     var body: some View {
         GeometryReader { proxy in
@@ -62,11 +65,13 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             let panelInteracting = isDraggingPanel || isPositionAnimating
             let expandedTopInset = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
             let context = makeContext(detents: detents, layout: layout)
+            let searchReveal = listRevealProgress(layout: layout)
+            let searchBottomInset = LocationSearchChrome.panelSearchBottomInset(
+                safeAreaBottom: safeAreaBottom
+            )
             let scrollBottomInset = LocationSearchChrome.scrollBottomPadding(
-                revealProgress: listRevealProgress(layout: layout),
-                bottomMargin: LocationSearchChrome.screenBottomOffset(
-                    panelBottomMargin: detents.bottomMargin
-                ),
+                revealProgress: searchReveal,
+                bottomMargin: searchBottomInset,
                 contentInset: detents.contentBottomInset
             )
 
@@ -87,6 +92,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 .onAppear {
                     isPanelInteracting = panelInteracting
                 }
+                .environment(\.panelScrollViewHandle, panelScrollViewHandle)
         }
         .sensoryFeedback(.selection, trigger: position)
         .onChange(of: position) { _, newValue in
@@ -147,8 +153,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                     context: context,
                     scrollBottomInset: scrollBottomInset,
                     listOpacity: listOpacity,
-                    listAcceptsTaps: listAcceptsTaps,
-                    showsCompactBar: showsCompactBar
+                    listAcceptsTaps: listAcceptsTaps
                 )
             } else {
                 collapsedChromeRegion(
@@ -178,8 +183,21 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         }
         .frame(height: layout.panelHeight, alignment: .top)
         .frame(maxWidth: .infinity)
+        .overlay(alignment: .top) {
+            if showsCompactBar {
+                PanelCompactBarChrome(
+                    title: compactBarTitle,
+                    scrollEdgeProgress: scrollEdgeProgress,
+                    onCollapse: collapseExpandedPanel,
+                    allowsHitTesting: !isDraggingPanel
+                )
+            }
+        }
+        .overlay(alignment: .bottom) {
+            searchDockRegion(revealProgress: listRevealProgress(layout: layout))
+        }
         .background {
-            VelvetPanelBackground()
+            panelShapedBackground(shape: shape)
         }
         .clipShape(shape)
         .shadow(
@@ -198,27 +216,15 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         context: BottomPanelCurtainContext,
         scrollBottomInset: CGFloat,
         listOpacity: CGFloat,
-        listAcceptsTaps: Bool,
-        showsCompactBar: Bool
+        listAcceptsTaps: Bool
     ) -> some View {
-        ZStack(alignment: .top) {
-            expandedScrollCoordinator(
-                detents: detents,
-                context: context,
-                scrollBottomInset: scrollBottomInset,
-                listOpacity: listOpacity,
-                listAcceptsTaps: listAcceptsTaps
-            )
-
-            if showsCompactBar {
-                ExpandedSheetCompactBar(
-                    title: compactBarTitle,
-                    scrollEdgeProgress: scrollEdgeProgress,
-                    onCollapse: collapseExpandedPanel
-                )
-                .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress > 0.5)
-            }
-        }
+        expandedScrollCoordinator(
+            detents: detents,
+            context: context,
+            scrollBottomInset: scrollBottomInset,
+            listOpacity: listOpacity,
+            listAcceptsTaps: listAcceptsTaps
+        )
         .frame(maxHeight: .infinity)
     }
 
@@ -228,19 +234,10 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         context: BottomPanelCurtainContext,
         gripGesture: some Gesture
     ) -> some View {
-        ZStack {
-            header(context)
-                .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress < 0.5)
-
-            ExpandedSheetCompactBar(
-                title: compactBarTitle,
-                scrollEdgeProgress: scrollEdgeProgress,
-                onCollapse: collapseExpandedPanel
-            )
-        }
-        .frame(height: VelvetMetrics.panelHeaderRowHeight)
-        .allowsHitTesting(!isDraggingPanel)
-        .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
+        header(context)
+            .frame(height: VelvetMetrics.panelHeaderRowHeight)
+            .allowsHitTesting(!isDraggingPanel)
+            .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
 
         stats(context)
             .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
@@ -351,6 +348,27 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             bottomTrailingRadius: layout.bottomCornerRadius,
             topTrailingRadius: VelvetTheme.panelRadius
         )
+    }
+
+    @ViewBuilder
+    private func searchDockRegion(revealProgress: CGFloat) -> some View {
+        if revealProgress > 0.01 {
+            searchDock()
+                .opacity(revealProgress)
+                .allowsHitTesting(revealProgress > 0.35 && !isDraggingPanel)
+        }
+    }
+
+    @ViewBuilder
+    private func panelShapedBackground<S: Shape>(shape: S) -> some View {
+        ZStack {
+            shape.fill(Color(.systemBackground))
+            if !reduceTransparency {
+                shape.fill(.ultraThickMaterial)
+            }
+        }
+        // Bleed past the clip path so rounded corners don't expose wallpaper.
+        .padding(-2)
     }
 
     private func gripBand(detents: BottomPanelDetents) -> some View {

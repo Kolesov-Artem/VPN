@@ -21,8 +21,11 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
     let onPanelDragEnded: (_ translation: CGFloat, _ predicted: CGFloat) -> Void
     @ViewBuilder let content: () -> Content
 
+    @Environment(\.panelScrollViewHandle) private var panelScrollViewHandle
+
     func makeUIViewController(context: Context) -> PanelScrollViewController<Content> {
         let controller = PanelScrollViewController(rootView: content())
+        controller.scrollViewHandle = panelScrollViewHandle
         controller.isScrollEnabled = isScrollEnabled
         controller.bottomContentInset = bottomContentInset
         controller.panelResizeContext = panelResizeContext
@@ -43,6 +46,7 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: PanelScrollViewController<Content>, context: Context) {
         let preservedOffset = controller.currentContentOffset
 
+        controller.scrollViewHandle = panelScrollViewHandle
         controller.isScrollEnabled = isScrollEnabled
         controller.bottomContentInset = bottomContentInset
         controller.panelResizeContext = panelResizeContext
@@ -63,6 +67,7 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
 
 final class PanelScrollViewController<Content: View>: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     var rootView: Content
+    weak var scrollViewHandle: PanelScrollViewHandle?
     var isScrollEnabled = true {
         didSet { applyScrollEnabled() }
     }
@@ -154,7 +159,12 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
         applyScrollEnabled()
         applyContentInset()
+        registerScrollViewHandle()
         reportScrollState()
+    }
+
+    deinit {
+        scrollViewHandle?.scrollView = nil
     }
 
     override func viewDidLayoutSubviews() {
@@ -190,6 +200,13 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     private func applyContentInset() {
         scrollView.contentInset.bottom = bottomContentInset
         scrollView.verticalScrollIndicatorInsets.bottom = bottomContentInset
+    }
+
+    private func registerScrollViewHandle() {
+        scrollViewHandle?.scrollView = scrollView
+        if #available(iOS 26.0, *) {
+            scrollView.bottomEdgeEffect.isHidden = true
+        }
     }
 
     private func reportScrollState() {

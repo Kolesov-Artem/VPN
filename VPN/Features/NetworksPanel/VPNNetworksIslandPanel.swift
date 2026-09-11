@@ -50,57 +50,36 @@ struct VPNNetworksIslandPanel: View {
     @State private var pingingIDs: Set<String> = []
     @State private var isRefreshingPing = false
     @State private var recentLocations: [VPNRecentLocationEntry] = []
-    @State private var cachedViewportHeight: CGFloat = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            let searchRevealProgress = searchRevealProgress(for: position)
-            let searchScreenOffset = LocationSearchChrome.screenBottomOffset(
-                panelBottomMargin: max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
-            )
-            let viewportHeight = cachedViewportHeight > 0 ? cachedViewportHeight : proxy.size.height
+        let searchBottomInset = LocationSearchChrome.panelSearchBottomInset(
+            safeAreaBottom: safeAreaBottom
+        )
 
-            BottomPanelCurtain(
-                position: $position,
-                isPanelInteracting: $isPanelInteracting,
-                showsSessionStats: connectionState == .connected,
-                safeAreaBottom: safeAreaBottom,
-                safeAreaTop: safeAreaTop,
-                compactBarTitle: displayProvider.name,
-                detentMode: detentMode,
-                onDismissSearch: { searchIsFocused = false }
-            ) { context in
-                networksPanelHeader(context: context)
-            } stats: { context in
-                connectionInfoBlock(context: context)
-            } footer: {
-                connectionButton
-            } scrollContent: { context in
-                networksAndLocationsContent(layout: context.layout)
-            }
-            .overlay(alignment: .top) {
-                Color.clear
-                    .frame(width: proxy.size.width, height: viewportHeight)
-                    .allowsHitTesting(false)
-                    .overlay(alignment: .bottom) {
-                        if searchRevealProgress > 0.01 {
-                            PanelLocationSearchControls(
-                                query: $query,
-                                isFocused: $searchIsFocused,
-                                bottomMargin: searchScreenOffset,
-                                safeAreaBottom: max(safeAreaBottom, VelvetTheme.minimumBottomMargin)
-                            )
-                            .opacity(searchRevealProgress)
-                            .allowsHitTesting(searchRevealProgress > 0.35)
-                        }
-                    }
-            }
-            .onAppear {
-                cachedViewportHeight = proxy.size.height
-            }
-            .onChange(of: proxy.size.height) { _, height in
-                cachedViewportHeight = height
-            }
+        BottomPanelCurtain(
+            position: $position,
+            isPanelInteracting: $isPanelInteracting,
+            showsSessionStats: connectionState == .connected,
+            safeAreaBottom: safeAreaBottom,
+            safeAreaTop: safeAreaTop,
+            compactBarTitle: displayProvider.name,
+            detentMode: detentMode,
+            onDismissSearch: { searchIsFocused = false }
+        ) { context in
+            networksPanelHeader(context: context)
+        } stats: { context in
+            connectionInfoBlock(context: context)
+        } footer: {
+            connectionButton
+        } scrollContent: { context in
+            networksAndLocationsContent(layout: context.layout)
+        } searchDock: {
+            PanelLocationSearchControls(
+                query: $query,
+                isFocused: $searchIsFocused,
+                bottomMargin: searchBottomInset,
+                safeAreaBottom: searchBottomInset
+            )
         }
         .onChange(of: position) { _, newValue in
             if newValue == .island {
@@ -179,15 +158,6 @@ struct VPNNetworksIslandPanel: View {
             }
         } message: {
             Text("You are connected. Changing location will reconnect using the new selection.")
-        }
-    }
-
-    private func searchRevealProgress(for position: BottomPanelPosition) -> CGFloat {
-        switch position {
-        case .expanded, .intermediate:
-            1
-        case .island:
-            0
         }
     }
 

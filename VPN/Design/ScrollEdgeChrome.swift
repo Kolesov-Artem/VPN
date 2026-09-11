@@ -1,5 +1,51 @@
 import SwiftUI
 
+/// Compact title row with Telegram bar blur flush to the top edge.
+struct PanelCompactBarChrome: View {
+    var title: String = "Velvet VPN"
+    let scrollEdgeProgress: CGFloat
+    let onCollapse: () -> Void
+    var allowsHitTesting: Bool = true
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        Color.clear
+            .frame(height: VelvetMetrics.panelScrollChromeHeight)
+            .allowsHitTesting(false)
+            .background(alignment: .top) {
+                if scrollEdgeProgress > 0.01 {
+                    scrollEdgeBackground
+                        .frame(height: VelvetMetrics.panelScrollChromeBlurHeight)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
+            .overlay(alignment: .top) {
+                ExpandedSheetCompactBar(
+                    title: title,
+                    scrollEdgeProgress: scrollEdgeProgress,
+                    onCollapse: onCollapse
+                )
+                .padding(.top, BottomPanelDetents.expandedGripBandHeight)
+                .allowsHitTesting(allowsHitTesting && scrollEdgeProgress > 0.5)
+            }
+    }
+
+    @ViewBuilder
+    private var scrollEdgeBackground: some View {
+        if reduceTransparency {
+            Color(.systemBackground)
+                .opacity(scrollEdgeProgress)
+        } else {
+            TelegramScrollEdgeBackground(
+                edge: .top,
+                progress: scrollEdgeProgress,
+                strength: .navigationBar
+            )
+        }
+    }
+}
+
 /// Compact title row shown as scrolling content passes beneath the pinned bar.
 struct ExpandedSheetCompactBar: View {
     var title: String = "Velvet VPN"
@@ -60,7 +106,7 @@ private struct PanelScrollEdgeBarModifier<Bar: View>: ViewModifier {
                                 if reduceTransparency {
                                     Color(.systemBackground)
                                 } else {
-                                    ScrollEdgeSoftBackground(progress: scrollEdgeProgress)
+                                    TelegramScrollEdgeBackground(edge: .top, progress: scrollEdgeProgress)
                                 }
                             }
                         }

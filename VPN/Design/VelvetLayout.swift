@@ -68,6 +68,12 @@ enum VelvetMetrics {
     static let statsStripCollapsedHeight: CGFloat = 102
     static let statsStripEstimatedHeight: CGFloat = statsStripCollapsedHeight
     static let panelHeaderRowHeight: CGFloat = 44
+    /// Scroll-edge chrome: grip band + compact title row.
+    static let panelScrollChromeHeight: CGFloat = BottomPanelDetents.expandedGripBandHeight + panelHeaderRowHeight
+    /// Extra blur feather below the compact bar when content scrolls underneath.
+    static let panelScrollChromeBlurExtension: CGFloat = 48
+    /// Total painted blur height for the top scroll edge.
+    static let panelScrollChromeBlurHeight: CGFloat = panelScrollChromeHeight + panelScrollChromeBlurExtension
     static let expandedPanelHeaderHeight: CGFloat = 56
     static let collapsedHeaderBottomPadding: CGFloat = 8
     static let collapsedSectionSpacing: CGFloat = 16
