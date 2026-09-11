@@ -49,20 +49,20 @@ struct VPNSelectionMismatch: Equatable {
         case .presetUnavailable(let job):
             "\(job.title) isn't available on \(providerName)"
         case .scopedProviderMissing:
-            "This network isn't available"
+            "Can't connect with this network"
         }
     }
 
     var gapCardBody: String {
         switch reason {
         case .presetUnavailable(let job) where job == .mobileLTE:
-            "Velvet has LTE servers in Russia and nearby regions for this preset."
+            "\(providerName) doesn't offer LTE servers for this preset. Use Smart Auto or browse other locations."
         case .presetUnavailable(let job) where job == .whitelistForeign:
-            "Velvet supports whitelist routing and foreign access for this preset."
+            "\(providerName) doesn't support whitelist routing for this preset. Use Smart Auto or pick another location."
         case .presetUnavailable:
-            "Velvet covers more locations for this preset."
-        case .scopedProviderMissing:
-            "Add Velvet VPN or switch to Smart Auto with your current network."
+            "\(providerName) doesn't have servers that match this preset. Use Smart Auto or pick another location."
+        case .scopedProviderMissing(let scopeLabel):
+            "\(scopeLabel) isn't available through \(providerName). Use Smart Auto or pick another location."
         }
     }
 }

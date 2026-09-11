@@ -235,29 +235,42 @@ struct VPNPrimaryConnectionButton: View {
     var usesErrorTint = true
     let action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if connectionState == .connecting {
-                    ProgressView()
-                        .controlSize(size)
-                        .tint(.white)
-                } else {
-                    Image(systemName: "power")
-                        .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
+                Group {
+                    if connectionState == .connecting {
+                        ProgressView()
+                            .controlSize(size)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "power")
+                            .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
+                    }
                 }
+                .contentTransition(.symbolEffect(.replace))
 
                 Text(title)
                     .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
+                    .contentTransition(.interpolate)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: VelvetMetrics.primaryButtonHeight)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous))
+            .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
         }
         .buttonStyle(PressScaleButtonStyle())
         .controlSize(size)
         .disabled(connectionState == .connecting)
+        .sensoryFeedback(.success, trigger: connectionState) { _, new in
+            new.isConnected
+        }
+        .sensoryFeedback(.error, trigger: connectionState) { _, new in
+            new.isFailed
+        }
         .accessibilityHint(
             connectionState == .connected
                 ? "Disconnects the demo VPN"

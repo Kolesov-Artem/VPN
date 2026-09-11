@@ -327,10 +327,11 @@ struct HomeView: View {
 
                 if let importToastMessage {
                     importToast(importToastMessage)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(VelvetMotion.importToast(reduceMotion: reduceMotion))
                         .zIndex(1)
                 }
             }
+            .animation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion), value: importToastMessage)
             .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
             .ignoresSafeArea(edges: .bottom)
         }
@@ -395,7 +396,7 @@ struct HomeView: View {
         importToastMessage = "✓  \(importedName) added from clipboard"
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
-            withAnimation {
+            withAnimation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion)) {
                 importToastMessage = nil
             }
         }
@@ -618,7 +619,7 @@ struct HomeView: View {
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
-            withAnimation {
+            withAnimation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion)) {
                 importToastMessage = nil
             }
         }

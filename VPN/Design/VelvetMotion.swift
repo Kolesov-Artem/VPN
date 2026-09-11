@@ -89,6 +89,16 @@ enum VelvetMotion {
         easeOut(duration: reduceMotion ? 0.12 : 0.18)
     }
 
+    /// Island height when session stats appear or disappear — same spring as panel drag.
+    static func connectionLayout(reduceMotion: Bool) -> Animation {
+        panel(reduceMotion: reduceMotion)
+    }
+
+    /// Import / notice toasts — short ease-out, symmetric top edge.
+    static func importToastAnimation(reduceMotion: Bool) -> Animation {
+        easeOut(duration: reduceMotion ? 0.12 : quickDuration)
+    }
+
     static func queryChange(reduceMotion: Bool) -> Animation {
         easeOut(duration: reduceMotion ? 0.12 : quickDuration)
     }
@@ -152,7 +162,17 @@ enum VelvetMotion {
         }
         return .asymmetric(
             insertion: .opacity.combined(with: .offset(y: 20)),
-            removal: .opacity.combined(with: .scale(scale: 0.98))
+            removal: .opacity.combined(with: .offset(y: 20))
+        )
+    }
+
+    static func importToast(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: -12)),
+            removal: .opacity.combined(with: .offset(y: -12))
         )
     }
 

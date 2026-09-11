@@ -94,6 +94,10 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 }
                 .environment(\.panelScrollViewHandle, panelScrollViewHandle)
         }
+        .animation(
+            VelvetMotion.connectionLayout(reduceMotion: reduceMotion),
+            value: showsSessionStats
+        )
         .sensoryFeedback(.selection, trigger: position)
         .onChange(of: position) { _, newValue in
             if newValue != .expanded {

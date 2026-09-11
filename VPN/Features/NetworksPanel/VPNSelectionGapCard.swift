@@ -3,69 +3,51 @@ import SwiftUI
 /// Contextual card when the current VPN cannot satisfy the selected preset.
 struct VPNSelectionGapCard: View {
     let mismatch: VPNSelectionMismatch
-    let showsVelvetPromo: Bool
-    let onTryVelvet: () -> Void
     let onUseSmartAuto: () -> Void
+    let onBrowseLocations: () -> Void
 
     var body: some View {
-        if showsVelvetPromo {
-            VelvetPromoCard(onPromoTap: onTryVelvet) {
-                gapContent
-            }
-        } else {
-            gapContent
-                .padding(VelvetMetrics.statsStripExpandedCardPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous)
-                        .fill(VelvetTheme.contentSurface)
-                )
-        }
-    }
-
-    private var gapContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(mismatch.gapCardTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(VelvetTheme.mainTextDark)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(mismatch.gapCardBody)
-                    .font(.footnote)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 10) {
-                if showsVelvetPromo {
-                    gapActionButton(title: "Try Velvet", isPrimary: true, action: onTryVelvet)
+                Button(action: onUseSmartAuto) {
+                    Text("Use Smart Auto")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(VelvetTheme.accent, in: Capsule())
                 }
+                .buttonStyle(PressScaleButtonStyle())
 
-                gapActionButton(
-                    title: "Use Smart Auto",
-                    isPrimary: !showsVelvetPromo,
-                    action: onUseSmartAuto
-                )
+                Button(action: onBrowseLocations) {
+                    Text("Browse locations")
+                        .font(.body.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Color(.secondarySystemFill), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
-    }
-
-    private func gapActionButton(
-        title: String,
-        isPrimary: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(isPrimary ? Color.white : VelvetTheme.accent)
-                .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isPrimary ? VelvetTheme.accent : VelvetTheme.accent.opacity(0.12))
-                )
-        }
-        .buttonStyle(PressScaleButtonStyle())
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous)
+                .fill(VelvetTheme.contentSurface)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(mismatch.gapCardTitle). \(mismatch.gapCardBody)")
     }
 }

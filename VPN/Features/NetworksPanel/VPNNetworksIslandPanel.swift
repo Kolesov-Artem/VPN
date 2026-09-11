@@ -191,10 +191,10 @@ struct VPNNetworksIslandPanel: View {
             if let connectionNoticeMessage {
                 connectionNoticeToast(connectionNoticeMessage)
                     .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(VelvetMotion.importToast(reduceMotion: reduceMotion))
             }
         }
-        .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionNoticeMessage)
+        .animation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion), value: connectionNoticeMessage)
         .confirmationDialog(
             "Delete this configuration?",
             isPresented: $showsDeleteConfirmation,
@@ -233,9 +233,8 @@ struct VPNNetworksIslandPanel: View {
                 if let selectionMismatch, showsMismatchGap {
                     VPNSelectionGapCard(
                         mismatch: selectionMismatch,
-                        showsVelvetPromo: selectionMismatch.suggestsVelvet && showsVelvetStatsPromo,
-                        onTryVelvet: openVelvetPaywall,
-                        onUseSmartAuto: connectWithSmartAutoFallback
+                        onUseSmartAuto: connectWithSmartAutoFallback,
+                        onBrowseLocations: expandPanelForLocationBrowse
                     )
                     .padding(.horizontal, VelvetMetrics.rowHorizontalPadding * reveal)
                 }
@@ -729,6 +728,13 @@ struct VPNNetworksIslandPanel: View {
         }
     }
 
+    private func expandPanelForLocationBrowse() {
+        searchIsFocused = false
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = .expanded
+        }
+    }
+
     private func connectWithSmartAutoFallback() {
         guard let fallback = VPNConnectionPlanner.smartAutoFallbackSelection(
             providers: providers,
@@ -768,7 +774,9 @@ struct VPNNetworksIslandPanel: View {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
             if connectionNoticeMessage == message {
-                connectionNoticeMessage = nil
+                withAnimation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion)) {
+                    connectionNoticeMessage = nil
+                }
             }
         }
     }
@@ -786,7 +794,7 @@ struct VPNNetworksIslandPanel: View {
         }
 
         if connectionState == .connected, !isSwitchingServer {
-            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+            withAnimation(VelvetMotion.connectionLayout(reduceMotion: reduceMotion)) {
                 connectionState = .disconnected
                 resolvedConnection = nil
                 connectedAt = nil
@@ -883,7 +891,7 @@ struct VPNNetworksIslandPanel: View {
             try? await Task.sleep(for: .milliseconds(500))
             guard connectionState == .connecting else { return }
 
-            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+            withAnimation(VelvetMotion.connectionLayout(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
                 isSwitchingServer = false
                 connectedAt = connectedAt ?? .now

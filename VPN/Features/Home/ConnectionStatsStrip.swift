@@ -47,8 +47,10 @@ struct ConnectionStatsStrip: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(usagePercentText)
+                    .contentTransition(.numericText())
                 Spacer(minLength: 8)
                 Text(sessionDataUsedText)
+                    .contentTransition(.numericText())
             }
             .font(VelvetTypography.statsStripLabel)
             .foregroundStyle(.secondary)

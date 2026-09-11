@@ -454,7 +454,11 @@ struct VPNIslandPanel: View {
     }
 
     private func handleConnectionTap() {
-        withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+        let layoutAnimation = connectionState == .connected
+            ? VelvetMotion.connectionLayout(reduceMotion: reduceMotion)
+            : VelvetMotion.connectionState(reduceMotion: reduceMotion)
+
+        withAnimation(layoutAnimation) {
             connectionState.handlePrimaryAction()
         }
 
@@ -462,7 +466,7 @@ struct VPNIslandPanel: View {
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+            withAnimation(VelvetMotion.connectionLayout(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
             }
         }

@@ -58,6 +58,6 @@ struct VPNPresetsStrip: View {
                     )
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
     }
 }
