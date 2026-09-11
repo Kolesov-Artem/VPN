@@ -14,6 +14,9 @@ struct HomeSettingsView: View {
     @AppStorage("velvet.logLevel") private var logLevel = "Info"
 
     @Bindable var providerStore: VPNProviderStore
+#if DEBUG
+    var devRuntime: VPNDevRuntime?
+#endif
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -22,6 +25,8 @@ struct HomeSettingsView: View {
     @State private var showsRouting = false
     @State private var showsLogs = false
     @State private var importMessage: String?
+    @State private var showsResetConfirmation = false
+    @State private var showsClearRecentConfirmation = false
 
     var onImportFromClipboard: ((String) -> Void)?
 
@@ -35,15 +40,36 @@ struct HomeSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+#if DEBUG
+                if let devRuntime {
+                    Section {
+                        NavigationLink("Developer panel") {
+                            VPNDevPanelView(
+                                providerStore: providerStore,
+                                runtime: devRuntime
+                            )
+                        }
+                    } header: {
+                        Text("Developer")
+                    } footer: {
+                        Text("Prototype states, demo scenarios, and debug flags.")
+                    }
+                }
+#endif
+
                 Section {
                     Toggle("Auto-connect on launch", isOn: $autoConnect)
                     Toggle("Connect to last location", isOn: $connectLastLocation)
                     Toggle("Notifications", isOn: $notificationsEnabled)
-                    Toggle("Kill switch", isOn: $killSwitch)
+                    VPNConfirmedToggle(
+                        title: "Kill switch",
+                        isOn: $killSwitch,
+                        confirmation: VPNSettingsConfirmations.killSwitch
+                    )
                 } header: {
                     Text("Connection")
                 } footer: {
-                    Text("Kill switch is stored for demo purposes. No Network Extension is installed.")
+                    Text("Kill switch blocks internet access if the VPN disconnects unexpectedly.")
                 }
 
                 Section("Networks") {
@@ -67,7 +93,7 @@ struct HomeSettingsView: View {
                     Button("Routing rules") { showsRouting = true }
                 }
 
-                Section("Advanced") {
+                Section {
                     Picker("Log level", selection: $logLevel) {
                         Text("Info").tag("Info")
                         Text("Debug").tag("Debug")
@@ -75,11 +101,13 @@ struct HomeSettingsView: View {
                     }
                     Button("View logs") { showsLogs = true }
                     Button("Clear recent locations") {
-                        VPNRecentLocationsStore.clear()
+                        showsClearRecentConfirmation = true
                     }
                     Button("Reset all settings", role: .destructive) {
-                        resetSettings()
+                        showsResetConfirmation = true
                     }
+                } header: {
+                    Text("Advanced")
                 }
 
                 Section {
@@ -150,6 +178,30 @@ struct HomeSettingsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(importMessage ?? "")
+            }
+            .confirmationDialog(
+                "Reset all settings?",
+                isPresented: $showsResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset Settings", role: .destructive) {
+                    resetSettings()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This restores connection, routing, and layout preferences to their defaults on this device.")
+            }
+            .confirmationDialog(
+                "Clear recent locations?",
+                isPresented: $showsClearRecentConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Clear", role: .destructive) {
+                    VPNRecentLocationsStore.clear()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Recently used servers will be removed from the quick list.")
             }
         }
     }

@@ -1,36 +1,34 @@
 import SwiftUI
 
-/// Horizontal use-case cards matching the five collapsed-island menu choices.
-struct VPNUseCaseCardsCard: View {
+struct VPNPresetsStrip: View {
     let locationSelection: VPNLocationSelection
     let selectionSource: VPNSelectionSource
-    let scope: VPNProviderScope
-    let onUseCaseConnect: (VPNUseCaseMenuChoice) -> Void
-
-    private let cardWidth: CGFloat = 136
-    private let cardHeight: CGFloat = 132
-    private let horizontalInset: CGFloat = 16
+    var addsTopSpacing: Bool = false
+    let onSelect: (VPNUseCaseMenuChoice) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(VPNUseCaseMenuChoice.allCases) { choice in
-                    useCaseCard(choice)
+        VStack(alignment: .leading, spacing: 8) {
+            VPNPanelSectionHeader(title: "Presets")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(VPNUseCaseMenuChoice.allCases) { choice in
+                        presetCard(choice)
+                    }
                 }
             }
-            .padding(.leading, horizontalInset)
-            .padding(.trailing, horizontalInset)
+            .scrollClipDisabled()
         }
-        .scrollClipDisabled()
+        .padding(.top, addsTopSpacing ? 12 : 0)
     }
 
-    private func useCaseCard(_ choice: VPNUseCaseMenuChoice) -> some View {
+    private func presetCard(_ choice: VPNUseCaseMenuChoice) -> some View {
         let isActive = selectionSource.activeUseCase(for: locationSelection) == choice
 
         return Button {
-            onUseCaseConnect(choice)
+            onSelect(choice)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Image(systemName: choice.iconSymbol)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -45,12 +43,9 @@ struct VPNUseCaseCardsCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 0)
             }
             .padding(12)
-            .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+            .frame(width: 132, height: 96, alignment: .topLeading)
             .background(
                 VelvetTheme.contentSurface,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -58,7 +53,7 @@ struct VPNUseCaseCardsCard: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        isActive ? Color.primary : Color.black.opacity(0.06),
+                        isActive ? Color.black : Color.black.opacity(0.06),
                         lineWidth: isActive ? 2 : 1
                     )
             }

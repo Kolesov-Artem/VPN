@@ -1,6 +1,13 @@
 import Foundation
 import Observation
 
+enum PromoDemoScenario {
+    /// Surfshark active, Velvet expired — promo + stats, no renewal.
+    case activeThirdParty
+    /// NordVPN expiring in 5 days, Velvet expired — promo + renewal.
+    case expiringThirdParty
+}
+
 enum VPNImportError: LocalizedError, Equatable {
     case invalidURL
     case unreadable
@@ -20,14 +27,29 @@ enum VPNImportError: LocalizedError, Equatable {
 @MainActor
 final class VPNProviderStore {
     private static let onboardingKey = "velvet.hasCompletedOnboarding"
+    private static let permissionKey = "velvet.hasSeenVPNPermission"
     private static let importedKeysKey = "velvet.importedProviderKeys"
     private static let providerSnapshotsKey = "velvet.providerSnapshots.v2"
     private static let providerScopeKey = "velvet.providerScope.v1"
+    private static let prototypeCycleKey = "velvet.prototypeOnboardingCycle"
+    private static let thirdPartyDemoTemplateIndex = 2
 
     var providers: [VPNProvider] = []
     var highlightedProviderID: UUID?
     var isRefreshing = false
     var providerScope: VPNProviderScope = .allNetworks
+    var hiddenRenewalBannerIDs: Set<UUID> = []
+
+    /// State 2 demo: first connect should surface mismatch UX instead of silent Smart Auto fallback.
+    var importedOnlyDemoAwaitingMismatch = false
+
+#if DEBUG
+    private static let activeScenarioKey = "velvet.dev.activeScenario"
+    var activePrototypeScenario: VPNPrototypeScenario? {
+        guard let raw = UserDefaults.standard.string(forKey: Self.activeScenarioKey) else { return nil }
+        return VPNPrototypeScenario(rawValue: raw)
+    }
+#endif
 
     var showsProviderPicker: Bool { providers.count > 1 }
 
@@ -51,12 +73,95 @@ final class VPNProviderStore {
         persistProviderScope()
     }
 
+    func hideRenewalBanner(for providerID: UUID) {
+        hiddenRenewalBannerIDs.insert(providerID)
+    }
+
+    var velvetProvider: VPNProvider? {
+        providers.first(where: { $0.kind == .velvetFeatured })
+    }
+
+    /// Presets are a Velvet-only feature — selecting one scopes routing to Velvet.
+    func activateVelvetForPresetSelection() {
+        guard let velvet = velvetProvider else { return }
+        setProviderScope(.provider(velvet.id))
+    }
+
     func resetProviderScope() {
         setProviderScope(.allNetworks)
     }
 
     var hasCompletedOnboarding: Bool {
         UserDefaults.standard.bool(forKey: Self.onboardingKey)
+    }
+
+    var hasSeenVPNPermission: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.permissionKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.permissionKey) }
+    }
+
+    func markVPNPermissionSeen() {
+        hasSeenVPNPermission = true
+    }
+
+    var prototypeOnboardingCycle: Int {
+        UserDefaults.standard.integer(forKey: Self.prototypeCycleKey)
+    }
+
+    var nextOnboardingExpectsVelvet: Bool {
+        prototypeOnboardingCycle % 2 == 1
+    }
+
+    func advancePrototypeCycle() {
+        let next = prototypeOnboardingCycle + 1
+        UserDefaults.standard.set(next, forKey: Self.prototypeCycleKey)
+    }
+
+    /// DEBUG launch helper: expired Velvet + one imported provider scoped for promo visibility.
+    func configurePromoDemo(scenario: PromoDemoScenario) {
+        let templateIndex: Int
+        let providerMessage: String?
+        let expiresAt: Date?
+
+        switch scenario {
+        case .activeThirdParty:
+            templateIndex = Self.thirdPartyDemoTemplateIndex
+            providerMessage = VPNProvider.velvetDemoMessage
+            expiresAt = VPNProvider.samples[templateIndex].expiresAt
+        case .expiringThirdParty:
+            templateIndex = 1
+            providerMessage = VPNProvider.samples[templateIndex].providerMessage
+            expiresAt = Calendar.current.date(byAdding: .day, value: 5, to: .now)
+        }
+
+        let template = VPNProvider.samples[templateIndex]
+        var velvet = VPNProvider.samples[0]
+        velvet.status = .expired
+        velvet.includedInSmartAuto = false
+
+        let imported = VPNProvider(
+            id: UUID(),
+            name: template.name,
+            iconSymbol: template.iconSymbol,
+            kind: .imported,
+            status: template.status,
+            servers: template.servers,
+            subscriptionURL: template.subscriptionURL ?? "https://provider.example/sub/demo",
+            lastUpdated: .now,
+            expiresAt: expiresAt,
+            includedInSmartAuto: true,
+            providerMessage: providerMessage,
+            providerMessageUpdatedAt: .now
+        )
+
+        providers = [velvet, imported]
+        nextImportIndex = templateIndex + 1
+        highlightedProviderID = imported.id
+        UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+        UserDefaults.standard.set(["import-\(templateIndex)-1"], forKey: Self.importedKeysKey)
+        persistSnapshots()
+        setProviderScope(.provider(imported.id))
+        VPNLogsStore.shared.append("Promo demo: \(template.name) (\(scenario))")
     }
 
     func resetToVelvetOnly() {
@@ -67,6 +172,151 @@ final class VPNProviderStore {
         persistSnapshots()
     }
 
+#if DEBUG
+    func loadSingleImportedOnly(templateIndex: Int = thirdPartyDemoTemplateIndex) {
+        guard VPNProvider.samples.indices.contains(templateIndex) else { return }
+        let template = VPNProvider.samples[templateIndex]
+        let imported = VPNProvider(
+            id: UUID(),
+            name: template.name,
+            iconSymbol: template.iconSymbol,
+            kind: .imported,
+            status: template.status,
+            servers: template.servers,
+            subscriptionURL: template.subscriptionURL ?? "https://provider.example/sub/demo",
+            lastUpdated: .now,
+            expiresAt: template.expiresAt,
+            includedInSmartAuto: template.includedInSmartAuto,
+            providerMessage: VPNProvider.velvetDemoMessage,
+            providerMessageUpdatedAt: .now
+        )
+        providers = [imported]
+        nextImportIndex = 1
+        highlightedProviderID = imported.id
+        UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+        UserDefaults.standard.set(["import-\(templateIndex)-1"], forKey: Self.importedKeysKey)
+        persistSnapshots()
+        setProviderScope(.provider(imported.id))
+    }
+
+    func expireProvider(id: UUID) {
+        update(id: id) { provider in
+            provider.status = .expired
+            provider.includedInSmartAuto = false
+        }
+    }
+
+    func expireAllImported() {
+        for provider in providers where provider.kind == .imported {
+            expireProvider(id: provider.id)
+        }
+    }
+
+    func setExpiringSoon(id: UUID, days: Int) {
+        update(id: id) { provider in
+            if provider.status == .expired {
+                provider.status = .active(
+                    locationCount: max(provider.servers.count, 1),
+                    trafficRemaining: "100 GB left"
+                )
+            }
+            provider.expiresAt = Calendar.current.date(byAdding: .day, value: days, to: .now)
+            provider.includedInSmartAuto = true
+        }
+    }
+
+    func resetPrototypeState() {
+        UserDefaults.standard.removeObject(forKey: Self.onboardingKey)
+        UserDefaults.standard.removeObject(forKey: Self.permissionKey)
+        UserDefaults.standard.removeObject(forKey: Self.importedKeysKey)
+        UserDefaults.standard.removeObject(forKey: Self.providerSnapshotsKey)
+        UserDefaults.standard.removeObject(forKey: Self.providerScopeKey)
+        UserDefaults.standard.removeObject(forKey: Self.activeScenarioKey)
+        hiddenRenewalBannerIDs.removeAll()
+        providers = []
+        nextImportIndex = 1
+        highlightedProviderID = nil
+        providerScope = .allNetworks
+    }
+
+    func applyPrototypeScenario(_ scenario: VPNPrototypeScenario) {
+        hiddenRenewalBannerIDs.removeAll()
+        VPNDevFlags.setConnectShouldFail(false)
+        UserDefaults.standard.set(scenario.rawValue, forKey: Self.activeScenarioKey)
+
+        switch scenario {
+        case .onboarding:
+            resetPrototypeState()
+
+        case .importedOnly:
+            loadSingleImportedOnly()
+            setProviderScope(.allNetworks)
+            importedOnlyDemoAwaitingMismatch = true
+
+        case .velvetOnly:
+            resetToVelvetOnly()
+            resetProviderScope()
+
+        case .velvetPlusImported:
+            var velvet = VPNProvider.samples[0]
+            let template = VPNProvider.samples[Self.thirdPartyDemoTemplateIndex]
+            let imported = makeImportedProvider(from: template, templateIndex: Self.thirdPartyDemoTemplateIndex)
+            providers = [velvet, imported]
+            nextImportIndex = Self.thirdPartyDemoTemplateIndex + 1
+            highlightedProviderID = nil
+            UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+            UserDefaults.standard.set(
+                ["import-\(Self.thirdPartyDemoTemplateIndex)-1"],
+                forKey: Self.importedKeysKey
+            )
+            persistSnapshots()
+            resetProviderScope()
+
+        case .velvetExpired:
+            var velvet = VPNProvider.samples[0]
+            velvet.status = .expired
+            velvet.includedInSmartAuto = false
+            let template = VPNProvider.samples[Self.thirdPartyDemoTemplateIndex]
+            let imported = makeImportedProvider(from: template, templateIndex: Self.thirdPartyDemoTemplateIndex)
+            providers = [velvet, imported]
+            nextImportIndex = Self.thirdPartyDemoTemplateIndex + 1
+            UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+            UserDefaults.standard.set(
+                ["import-\(Self.thirdPartyDemoTemplateIndex)-1"],
+                forKey: Self.importedKeysKey
+            )
+            persistSnapshots()
+            resetProviderScope()
+
+        case .importedExpired:
+            loadSingleImportedOnly()
+            if let importedID = providers.first(where: { $0.kind == .imported })?.id {
+                expireProvider(id: importedID)
+            }
+            setProviderScope(.allNetworks)
+        }
+
+        VPNLogsStore.shared.append("Prototype scenario: \(scenario.title)")
+    }
+
+    private func makeImportedProvider(from template: VPNProvider, templateIndex: Int) -> VPNProvider {
+        VPNProvider(
+            id: UUID(),
+            name: template.name,
+            iconSymbol: template.iconSymbol,
+            kind: .imported,
+            status: template.status,
+            servers: template.servers,
+            subscriptionURL: template.subscriptionURL ?? "https://provider.example/sub/demo",
+            lastUpdated: .now,
+            expiresAt: template.expiresAt,
+            includedInSmartAuto: true,
+            providerMessage: template.providerMessage,
+            providerMessageUpdatedAt: .now
+        )
+    }
+#endif
+
     func importFromURL(_ urlString: String) -> Result<VPNProvider, VPNImportError> {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .failure(.invalidURL) }
@@ -76,7 +326,7 @@ final class VPNProviderStore {
             return .failure(.unreadable)
         }
 
-        let templateIndex = min(nextImportIndex, VPNProvider.samples.count - 2)
+        let templateIndex = onboardingImportTemplateIndex
         let template = VPNProvider.samples[templateIndex]
         let importKey = "import-\(templateIndex)-\(nextImportIndex)"
 
@@ -95,7 +345,7 @@ final class VPNProviderStore {
             lastUpdated: .now,
             expiresAt: template.expiresAt,
             includedInSmartAuto: template.includedInSmartAuto,
-            providerMessage: template.providerMessage,
+            providerMessage: onboardingProviderMessage(for: template),
             providerMessageUpdatedAt: .now
         )
 
@@ -104,7 +354,9 @@ final class VPNProviderStore {
         }
 
         if !hasCompletedOnboarding {
-            resetToVelvetOnly()
+            prepareForFirstImport()
+        } else if !providers.contains(where: { $0.kind == .velvetFeatured }) {
+            insertVelvetIfMissing()
         }
 
         providers.append(imported)
@@ -232,10 +484,13 @@ final class VPNProviderStore {
         if keys.isEmpty {
             providers = VPNProvider.samples
         } else {
-            providers = [VPNProvider.samples[0]]
+            providers = []
             for key in keys {
                 guard let imported = demoProvider(forImportKey: key) else { continue }
                 providers.append(imported)
+            }
+            if providers.filter({ $0.kind == .imported }).count > 1 {
+                insertVelvetIfMissing()
             }
         }
         nextImportIndex = max(providers.filter { $0.kind == .imported }.count + 1, 1)
@@ -370,5 +625,31 @@ final class VPNProviderStore {
             guard !Task.isCancelled, highlightedProviderID == id else { return }
             highlightedProviderID = nil
         }
+    }
+
+    private var onboardingImportTemplateIndex: Int {
+        if !hasCompletedOnboarding {
+            return Self.thirdPartyDemoTemplateIndex
+        }
+        return min(nextImportIndex, VPNProvider.samples.count - 2)
+    }
+
+    private func onboardingProviderMessage(for template: VPNProvider) -> String? {
+        if !hasCompletedOnboarding {
+            return VPNProvider.velvetDemoMessage
+        }
+        return template.providerMessage
+    }
+
+    private func prepareForFirstImport() {
+        providers = []
+        nextImportIndex = 1
+        UserDefaults.standard.set(true, forKey: Self.onboardingKey)
+        UserDefaults.standard.set([String](), forKey: Self.importedKeysKey)
+    }
+
+    private func insertVelvetIfMissing() {
+        guard !providers.contains(where: { $0.kind == .velvetFeatured }) else { return }
+        providers.insert(VPNProvider.samples[0], at: 0)
     }
 }

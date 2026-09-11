@@ -105,7 +105,6 @@ struct VPNIslandPanel: View {
                 }
             }
             .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
-            .padding(.top, VelvetMetrics.infoBlockTopSpacing)
         }
     }
 

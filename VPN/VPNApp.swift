@@ -16,7 +16,13 @@ private struct RootView: View {
     init() {
 #if DEBUG
         let initialRoute: AppRoute =
-            CommandLine.arguments.contains("--show-home") ? .home : .onboarding
+            if CommandLine.arguments.contains("--show-permission") {
+                .permission
+            } else if CommandLine.arguments.contains("--show-home") {
+                .home
+            } else {
+                .onboarding
+            }
 #else
         let initialRoute = AppRoute.onboarding
 #endif

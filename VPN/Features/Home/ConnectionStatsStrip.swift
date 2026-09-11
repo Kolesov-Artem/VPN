@@ -195,45 +195,77 @@ struct ConnectionStatsStrip: View {
     }
 }
 
-/// Drives stats reveal with panel motion: follows the finger while dragging,
-/// springs when the detent settles.
+/// Drives stats reveal with panel motion: always tracks live panel height so
+/// content follows the finger and stays visible at intermediate detents.
 struct AnimatedPanelStatsReveal<Content: View>: View {
     let context: BottomPanelCurtainContext
     @ViewBuilder let content: (CGFloat) -> Content
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var revealProgress: CGFloat = 0
-    @State private var didInitialize = false
-
-    private var desiredReveal: CGFloat {
-        guard context.isStatsExpanded else { return 0 }
-        if context.isDraggingPanel {
-            return context.layout.revealProgress
+    private var activeReveal: CGFloat {
+        let progress = context.layout.revealProgress
+        if progress > 0.001 || context.isDraggingPanel {
+            return progress
         }
-        return 1
+        return context.isStatsExpanded ? 1 : 0
     }
 
     var body: some View {
-        content(revealProgress)
-            .onChange(of: desiredReveal, initial: true) { _, target in
-                guard didInitialize else {
-                    revealProgress = target
-                    didInitialize = true
-                    return
-                }
-                applyReveal(target)
-            }
+        content(activeReveal)
+    }
+}
+
+private struct PanelRevealMeasuredHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Grows from zero height with panel progress so reveal doesn't pop content in.
+struct PanelRevealHeightClip<Content: View>: View {
+    var progress: CGFloat
+    @ViewBuilder var content: () -> Content
+
+    @State private var measuredHeight: CGFloat = 0
+
+    private var clampedProgress: CGFloat {
+        progress.clamped(to: 0...1)
     }
 
-    private func applyReveal(_ target: CGFloat) {
-        if context.isDraggingPanel {
-            revealProgress = target
-            return
-        }
+    private var usesNaturalHeight: Bool {
+        clampedProgress >= 1
+    }
 
-        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
-            revealProgress = target
+    private var revealedHeight: CGFloat? {
+        guard !usesNaturalHeight else { return nil }
+        return measuredHeight * clampedProgress
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(clampedProgress > 0.01 ? clampedProgress : 0)
         }
+        .frame(height: revealedHeight, alignment: .top)
+        .clipped()
+        .allowsHitTesting(clampedProgress > 0.01)
+        .background {
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .accessibilityHidden(true)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: PanelRevealMeasuredHeightKey.self,
+                            value: geometry.size.height
+                        )
+                    }
+                }
+        }
+        .onPreferenceChange(PanelRevealMeasuredHeightKey.self) { measuredHeight = $0 }
     }
 }
 
@@ -258,28 +290,24 @@ struct ConnectionStatsRevealShell<Details: View>: View {
                     EdgeInsets(
                         top: sectionPadding,
                         leading: sectionPadding,
-                        bottom: detailsVisible(reveal) ? 0 : sectionPadding,
+                        bottom: reveal > 0.01 ? VelvetMetrics.statsStripDividerPadding : sectionPadding,
                         trailing: sectionPadding
                     )
                 )
 
-            if detailsVisible(reveal) {
+            PanelRevealHeightClip(progress: reveal) {
                 details()
             }
         }
         .padding(cardPadding)
         .background {
             RoundedRectangle(
-                cornerRadius: VelvetMetrics.statsStripExpandedCardCornerRadius,
+                cornerRadius: VelvetMetrics.contentSurfaceCornerRadius,
                 style: .continuous
             )
             .fill(VelvetTheme.contentSurface)
             .opacity(reveal)
         }
-    }
-
-    private func detailsVisible(_ reveal: CGFloat) -> Bool {
-        reveal > 0.01
     }
 }
 

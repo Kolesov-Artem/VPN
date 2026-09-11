@@ -10,6 +10,7 @@ struct VPNCompactNetworksCard: View {
     let onOpenProvider: (UUID) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.panelScrollViewHandle) private var panelScrollViewHandle
     @State private var isExpanded = false
 
     private var providers: [VPNProvider] { providerStore.providers }
@@ -30,9 +31,13 @@ struct VPNCompactNetworksCard: View {
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(VelvetMotion.accordion(reduceMotion: reduceMotion)) {
+                panelScrollViewHandle.preserveContentOffset()
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
                     isExpanded.toggle()
                 }
+                panelScrollViewHandle.preserveContentOffset()
             } label: {
                 HStack(spacing: 8) {
                     Text(resolvedSummaryTitle)
@@ -72,7 +77,7 @@ struct VPNCompactNetworksCard: View {
                 )
             }
         }
-        .animation(VelvetMotion.accordion(reduceMotion: reduceMotion), value: isExpanded)
+        .animation(nil, value: isExpanded)
         .clipped()
         .background {
             if showsBackground {
@@ -92,15 +97,10 @@ struct VPNCompactNetworksCard: View {
             onOpenProvider(provider.id)
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: provider.iconSymbol)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(provider.kind == .velvetFeatured ? VelvetTheme.accent : VelvetTheme.providerAccent)
-                    .frame(width: VelvetMetrics.listIconSlot, height: VelvetMetrics.listIconSlot)
-                    .background(
-                        (provider.kind == .velvetFeatured ? VelvetTheme.accent : VelvetTheme.providerAccent)
-                            .opacity(VelvetTheme.selectionHighlightOpacity),
-                        in: Circle()
-                    )
+                VPNProviderBrandLogo(
+                    provider: provider,
+                    size: VelvetMetrics.listIconSlot
+                )
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -113,17 +113,10 @@ struct VPNCompactNetworksCard: View {
                         }
                     }
 
-                    if provider.hasProviderMessage, let message = provider.providerMessage {
-                        Text(message.linePreview)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    } else {
-                        Text(provider.status == .expired ? "Renew to restore access" : provider.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(provider.networksListSubtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(provider.status == .expired ? 1 : 2)
                 }
 
                 Spacer(minLength: 4)
@@ -149,8 +142,3 @@ struct VPNCompactNetworksCard: View {
     }
 }
 
-private extension String {
-    var linePreview: String {
-        replacingOccurrences(of: "\n", with: " · ")
-    }
-}

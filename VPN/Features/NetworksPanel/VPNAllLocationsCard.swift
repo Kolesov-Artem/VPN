@@ -13,6 +13,8 @@ struct VPNAllLocationsCard: View {
 
     @State private var expandedGroupIDs: Set<String> = []
 
+    @Environment(\.panelScrollViewHandle) private var panelScrollViewHandle
+
     private var providers: [VPNProvider] { providerStore.providers }
     private var scope: VPNProviderScope { providerStore.providerScope }
 
@@ -193,6 +195,7 @@ struct VPNAllLocationsCard: View {
     }
 
     private func toggleGroupExpansion(_ id: String) {
+        panelScrollViewHandle.preserveContentOffset()
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -202,6 +205,7 @@ struct VPNAllLocationsCard: View {
                 expandedGroupIDs.insert(id)
             }
         }
+        panelScrollViewHandle.preserveContentOffset()
     }
 
     private func pingLabel(for candidate: VPNNetworkLocation) -> String? {

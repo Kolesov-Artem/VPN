@@ -169,8 +169,12 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let preservedOffset = scrollView.contentOffset
         minContentHeightConstraint?.constant = -bottomContentInset
         hostingController.view.invalidateIntrinsicContentSize()
+        if abs(scrollView.contentOffset.y - preservedOffset.y) > 0.5 {
+            scrollView.contentOffset = preservedOffset
+        }
     }
 
     func updateHostedContent(_ content: Content, preservingOffset: CGPoint) {

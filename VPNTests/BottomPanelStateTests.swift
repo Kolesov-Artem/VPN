@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import VPN
 
@@ -344,7 +345,7 @@ struct BottomPanelStateTests {
             isAccessibilitySize: false
         )
 
-        #expect(collapsedHeight == 159)
+        #expect(collapsedHeight == 163)
     }
 
     @Test
@@ -382,7 +383,7 @@ struct BottomPanelStateTests {
         state.handlePrimaryAction()
         #expect(state == .disconnected)
 
-        state = .failed(message: "Test")
+        state = .failed(.network(message: "Test"))
         state.handlePrimaryAction()
         #expect(state == .connecting)
     }
@@ -587,5 +588,74 @@ struct VPNLocationQueryTests {
 
         #expect(query.isDefault)
         #expect(query.text == "tokyo")
+    }
+}
+
+struct VPNConnectionPlannerTests {
+    private func surfsharkOnly() -> [VPNProvider] {
+        let template = VPNProvider.samples[2]
+        return [
+            VPNProvider(
+                id: UUID(),
+                name: template.name,
+                iconSymbol: template.iconSymbol,
+                kind: .imported,
+                status: template.status,
+                servers: template.servers,
+                subscriptionURL: template.subscriptionURL,
+                lastUpdated: .now,
+                expiresAt: template.expiresAt,
+                includedInSmartAuto: template.includedInSmartAuto
+            )
+        ]
+    }
+
+    @Test
+    func reconcileSelectionClearsStaleVelvetScope() {
+        let providers = surfsharkOnly()
+        let surfsharkID = providers[0].id
+        let velvetID = UUID()
+        let staleSelection = VPNLocationSelection.smartJob(
+            .streaming,
+            scope: .provider(velvetID)
+        )
+
+        let reconciled = VPNConnectionPlanner.reconcileSelection(
+            staleSelection,
+            providers: providers,
+            storeScope: .allNetworks
+        )
+
+        #expect(reconciled == .smartJob(.streaming, scope: .provider(surfsharkID)))
+        #expect(VPNConnectionPlanner.resolve(providers: providers, selection: reconciled) != nil)
+    }
+
+    @Test
+    func smartAutoFallbackFindsSurfsharkServer() {
+        let providers = surfsharkOnly()
+        let selection = VPNLocationSelection.smartJob(.mobileLTE, scope: .allNetworks)
+
+        let fallback = VPNConnectionPlanner.smartAutoFallbackSelection(
+            providers: providers,
+            preferredScope: selection.scope,
+            storeScope: .allNetworks
+        )
+
+        #expect(fallback != nil)
+        #expect(VPNConnectionPlanner.resolve(providers: providers, selection: fallback!) != nil)
+    }
+
+    @Test
+    func diagnoseMobileLTEMismatchOnSurfshark() {
+        let providers = surfsharkOnly()
+        let selection = VPNLocationSelection.smartJob(.mobileLTE, scope: .allNetworks)
+
+        let mismatch = VPNConnectionPlanner.diagnoseSelectionFailure(
+            providers: providers,
+            selection: selection
+        )
+
+        #expect(mismatch?.reason == .presetUnavailable(job: .mobileLTE))
+        #expect(mismatch?.suggestsVelvet == true)
     }
 }

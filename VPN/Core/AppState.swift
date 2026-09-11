@@ -3,17 +3,106 @@ import Foundation
 
 enum AppRoute {
     case onboarding
+    case permission
     case home
+}
+
+enum VPNSelectionMismatchReason: Equatable {
+    case presetUnavailable(job: VPNUserJob)
+    case scopedProviderMissing(scopeLabel: String)
+}
+
+struct VPNSelectionMismatch: Equatable {
+    let reason: VPNSelectionMismatchReason
+    let providerName: String
+    let selection: VPNLocationSelection
+
+    var suggestsVelvet: Bool {
+        switch reason {
+        case .presetUnavailable(let job):
+            job == .mobileLTE || job == .whitelistForeign
+        case .scopedProviderMissing:
+            true
+        }
+    }
+
+    var collapsedTitle: String {
+        switch reason {
+        case .presetUnavailable(let job):
+            "\(job.title) isn't available"
+        case .scopedProviderMissing:
+            "Network not available"
+        }
+    }
+
+    var collapsedSubtitle: String {
+        switch reason {
+        case .presetUnavailable(let job):
+            "\(providerName) doesn't cover \(job.title.lowercased()) servers"
+        case .scopedProviderMissing(let scopeLabel):
+            "\(scopeLabel) isn't in your networks"
+        }
+    }
+
+    var gapCardTitle: String {
+        switch reason {
+        case .presetUnavailable(let job):
+            "\(job.title) isn't available on \(providerName)"
+        case .scopedProviderMissing:
+            "This network isn't available"
+        }
+    }
+
+    var gapCardBody: String {
+        switch reason {
+        case .presetUnavailable(let job) where job == .mobileLTE:
+            "Velvet has LTE servers in Russia and nearby regions for this preset."
+        case .presetUnavailable(let job) where job == .whitelistForeign:
+            "Velvet supports whitelist routing and foreign access for this preset."
+        case .presetUnavailable:
+            "Velvet covers more locations for this preset."
+        case .scopedProviderMissing:
+            "Add Velvet VPN or switch to Smart Auto with your current network."
+        }
+    }
+}
+
+enum VPNConnectionFailure: Equatable {
+    case network(message: String)
+    case selectionMismatch(VPNSelectionMismatch)
+
+    var isSelectionMismatch: Bool {
+        if case .selectionMismatch = self { return true }
+        return false
+    }
+
+    var displayMessage: String {
+        switch self {
+        case .network(let message):
+            message
+        case .selectionMismatch(let info):
+            info.collapsedSubtitle
+        }
+    }
 }
 
 enum VPNConnectionState: Equatable {
     case disconnected
     case connecting
     case connected
-    case failed(message: String)
+    case failed(VPNConnectionFailure)
 
     var isConnected: Bool {
         if case .connected = self { true } else { false }
+    }
+
+    var isFailed: Bool {
+        if case .failed = self { true } else { false }
+    }
+
+    var failure: VPNConnectionFailure? {
+        if case let .failed(failure) = self { return failure }
+        return nil
     }
 
     mutating func handlePrimaryAction() {

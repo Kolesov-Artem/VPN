@@ -4,26 +4,81 @@ import SwiftUI
 
 struct VPNProviderBrandIcon: View {
     let provider: VPNProvider
+    var size: CGFloat = VelvetMetrics.islandProviderIconSize
+
+    private var gradientColors: [Color] {
+        if provider.kind == .velvetFeatured {
+            [VelvetTheme.softPurple, VelvetTheme.accent]
+        } else {
+            [
+                VelvetTheme.providerAccent.opacity(0.55),
+                VelvetTheme.providerAccent,
+            ]
+        }
+    }
+
+    private var iconFont: Font {
+        if size <= VelvetMetrics.listIconSlot {
+            .caption.weight(.semibold)
+        } else {
+            .body.weight(.semibold)
+        }
+    }
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(
                     LinearGradient(
-                        colors: [
-                            VelvetTheme.softPurple,
-                            VelvetTheme.accent,
-                        ],
+                        colors: gradientColors,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
 
             Image(systemName: provider.iconSymbol)
-                .font(.body.weight(.semibold))
+                .font(iconFont)
                 .foregroundStyle(.white)
         }
-        .frame(width: VelvetMetrics.islandProviderIconSize, height: VelvetMetrics.islandProviderIconSize)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+struct VPNProviderBrandLogo: View {
+    let provider: VPNProvider
+    var size: CGFloat = VelvetMetrics.islandProviderIconSize
+
+    var body: some View {
+        Group {
+            if let assetName = VPNBrandCatalog.bundledAssetName(for: provider) {
+                Image(assetName)
+                    .resizable()
+                    .scaledToFill()
+            } else if let logoURL = VPNBrandCatalog.remoteLogoURL(for: provider) {
+                AsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure, .empty:
+                        VPNProviderBrandIcon(provider: provider, size: size)
+                    @unknown default:
+                        VPNProviderBrandIcon(provider: provider, size: size)
+                    }
+                }
+            } else {
+                VPNProviderBrandIcon(provider: provider, size: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(Color(.systemBackground), in: Circle())
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+        }
         .accessibilityHidden(true)
     }
 }
@@ -79,10 +134,47 @@ struct VPNUseCasePresetsMenu: View {
     }
 }
 
+struct VPNProviderIconStack: View {
+    let providers: [VPNProvider]
+    var maxVisible: Int = 3
+
+    private var overflowCount: Int {
+        max(0, providers.count - maxVisible)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            HStack(spacing: -12) {
+                ForEach(Array(providers.prefix(maxVisible).enumerated()), id: \.element.id) { index, provider in
+                    VPNProviderBrandLogo(provider: provider)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(VelvetTheme.contentSurface, lineWidth: 2)
+                        }
+                        .zIndex(Double(maxVisible - index))
+                }
+            }
+
+            if overflowCount > 0 {
+                Text("+\(overflowCount)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
+                    .offset(x: 6, y: -4)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 struct VPNIslandCollapsedHeader: View {
     let provider: VPNProvider
     let title: String
     let subtitle: String
+    var providers: [VPNProvider] = []
+    var showsMultiProviderSummary: Bool = false
     var activePreset: VPNUseCaseMenuChoice?
     var onPresetSelected: ((VPNUseCaseMenuChoice) -> Void)?
     var onProviderTap: (() -> Void)?
@@ -105,7 +197,11 @@ struct VPNIslandCollapsedHeader: View {
     @ViewBuilder
     private var providerSummary: some View {
         let content = HStack(spacing: 12) {
-            VPNProviderBrandIcon(provider: provider)
+            if showsMultiProviderSummary {
+                VPNProviderIconStack(providers: providers)
+            } else {
+                VPNProviderBrandLogo(provider: provider)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -136,6 +232,7 @@ struct VPNPrimaryConnectionButton: View {
     let title: String
     let connectionState: VPNConnectionState
     var size: ControlSize = .large
+    var usesErrorTint = true
     let action: () -> Void
 
     var body: some View {
@@ -173,7 +270,7 @@ struct VPNPrimaryConnectionButton: View {
         case .connected:
             VelvetTheme.connectedTint
         case .failed:
-            VelvetTheme.errorTint
+            usesErrorTint ? VelvetTheme.errorTint : VelvetTheme.accent
         default:
             VelvetTheme.accent
         }

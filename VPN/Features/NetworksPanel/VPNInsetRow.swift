@@ -85,12 +85,22 @@ struct VPNInsetRow: View {
                     .accessibilityLabel("Selected")
             }
 
+            chevronSlot
+        }
+    }
+
+    private var chevronSlot: some View {
+        Group {
             if showsChevron {
                 Image(systemName: isDisclosureExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
-                    .animation(nil, value: isDisclosureExpanded)
+            } else {
+                Color.clear
             }
         }
+        .frame(width: VelvetMetrics.listDisclosureChevronWidth, height: 14)
+        .animation(nil, value: isDisclosureExpanded)
+        .accessibilityHidden(!showsChevron)
     }
 }

@@ -140,47 +140,36 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         let footerOpacity = footerVisibility(for: layout)
         let listOpacity = layout.listProgress
         let listAcceptsTaps = position != .island && !isDraggingPanel
-        let allowsContentScroll = position == .expanded
         let showsCompactBar = position == .expanded
-        let gripGesture = gripDragGesture(detents: detents)
 
         return VStack(spacing: 0) {
-            gripBand(detents: detents)
+            gripBand()
 
-            if allowsContentScroll {
-                expandedScrollRegion(
-                    detents: detents,
-                    context: context,
-                    scrollBottomInset: scrollBottomInset,
-                    listOpacity: listOpacity,
-                    listAcceptsTaps: listAcceptsTaps
-                )
-            } else {
-                collapsedChromeRegion(
-                    detents: detents,
-                    context: context,
-                    gripGesture: gripGesture
-                )
-
-                collapsedScrollCoordinator(
-                    detents: detents,
-                    context: context,
-                    scrollBottomInset: scrollBottomInset,
-                    listOpacity: listOpacity,
-                    listAcceptsTaps: listAcceptsTaps,
-                    showsList: listOpacity > 0.01
-                )
-            }
+            expandedScrollRegion(
+                detents: detents,
+                context: context,
+                scrollBottomInset: scrollBottomInset,
+                listOpacity: listOpacity,
+                listAcceptsTaps: listAcceptsTaps
+            )
 
             if footerOpacity > 0.01 {
                 footer()
-                    .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
+                    .padding(
+                        .horizontal,
+                        position == .island
+                            ? VelvetMetrics.islandContentPadding
+                            : VelvetMetrics.rowHorizontalPadding
+                    )
                     .padding(.top, position == .island ? VelvetMetrics.collapsedSectionSpacing : 0)
                     .padding(.bottom, VelvetMetrics.collapsedBottomPadding)
                     .opacity(footerOpacity)
                     .allowsHitTesting(footerOpacity > 0.5 && !isDraggingPanel)
             }
         }
+        .simultaneousGesture(
+            position == .island ? gripDragGesture(detents: detents) : nil
+        )
         .frame(height: layout.panelHeight, alignment: .top)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .top) {
@@ -228,21 +217,6 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         .frame(maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private func collapsedChromeRegion(
-        detents: BottomPanelDetents,
-        context: BottomPanelCurtainContext,
-        gripGesture: some Gesture
-    ) -> some View {
-        header(context)
-            .frame(height: VelvetMetrics.panelHeaderRowHeight)
-            .allowsHitTesting(!isDraggingPanel)
-            .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
-
-        stats(context)
-            .modifier(PanelChromeDragModifier(isActive: true, gesture: gripGesture))
-    }
-
     private func expandedScrollCoordinator(
         detents: BottomPanelDetents,
         context: BottomPanelCurtainContext,
@@ -250,56 +224,12 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         listOpacity: CGFloat,
         listAcceptsTaps: Bool
     ) -> some View {
-        PanelScrollCoordinator(
-            isScrollEnabled: true,
+        let allowsContentScroll = position == .expanded
+
+        return PanelScrollCoordinator(
+            isScrollEnabled: allowsContentScroll,
             bottomContentInset: scrollBottomInset,
-            panelResizeContext: nil,
-            isScrollAtTop: $isScrollAtTop,
-            scrollEdgeProgress: $scrollEdgeProgress,
-            onPanelDragChanged: { translation in
-                beginPanelDragIfNeeded()
-                dragTranslation = translation
-            },
-            onPanelExpandedDuringDrag: {
-                position = .expanded
-                dragTranslation = 0
-            },
-            onPanelDragEnded: { translation, predicted in
-                snapPanel(
-                    detents: detents,
-                    translation: translation,
-                    predictedEndTranslation: predicted
-                )
-            }
-        ) {
-            VStack(spacing: 0) {
-                header(context)
-                    .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress < 0.5)
-
-                stats(context)
-
-                scrollContent(context)
-                    .opacity(listOpacity)
-                    .allowsHitTesting(listAcceptsTaps)
-            }
-        }
-        .frame(maxHeight: .infinity)
-        .layoutPriority(1)
-        .id(scrollResetToken)
-    }
-
-    private func collapsedScrollCoordinator(
-        detents: BottomPanelDetents,
-        context: BottomPanelCurtainContext,
-        scrollBottomInset: CGFloat,
-        listOpacity: CGFloat,
-        listAcceptsTaps: Bool,
-        showsList: Bool
-    ) -> some View {
-        PanelScrollCoordinator(
-            isScrollEnabled: false,
-            bottomContentInset: scrollBottomInset,
-            panelResizeContext: PanelResizeContext(
+            panelResizeContext: allowsContentScroll ? nil : PanelResizeContext(
                 baseHeight: detents.height(for: position),
                 minHeight: detents.islandHeight,
                 maxHeight: detents.expandedHeight
@@ -322,15 +252,36 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 )
             }
         ) {
-            if showsList {
-                scrollContent(context)
-                    .opacity(listOpacity)
-                    .allowsHitTesting(listAcceptsTaps)
-                    .padding(.top, 12)
+            let islandPadding = context.position == .island
+                ? VelvetMetrics.islandContentPadding * (1 - context.layout.revealProgress)
+                : 0
+
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    header(context)
+                        .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress < 0.5)
+
+                    stats(context)
+                        .padding(
+                            .top,
+                            VelvetMetrics.infoBlockTopSpacing * context.layout.revealProgress
+                        )
+                        .padding(
+                            .bottom,
+                            VelvetMetrics.infoBlockTopSpacing * context.layout.revealProgress
+                        )
+                }
+                .padding(.horizontal, islandPadding)
+
+                if listOpacity > 0.01 {
+                    scrollContent(context)
+                        .opacity(listOpacity)
+                        .allowsHitTesting(listAcceptsTaps)
+                }
             }
         }
-        .frame(maxHeight: showsList ? .infinity : 0)
-        .layoutPriority(showsList ? 1 : 0)
+        .frame(maxHeight: .infinity)
+        .layoutPriority(1)
         .id(scrollResetToken)
     }
 
@@ -371,7 +322,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         .padding(-2)
     }
 
-    private func gripBand(detents: BottomPanelDetents) -> some View {
+    private func gripBand() -> some View {
         Capsule()
             .fill(Color.secondary.opacity(0.42))
             .frame(width: 36, height: 5)
@@ -379,9 +330,6 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity)
             .accessibilityLabel("Drag to resize panel")
-            .bottomPanelDragHandle(
-                gesture: gripDragGesture(detents: detents)
-            )
     }
 
     private func gripDragGesture(detents: BottomPanelDetents) -> some Gesture {
@@ -464,17 +412,3 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     }
 }
 
-private struct PanelChromeDragModifier<G: Gesture>: ViewModifier {
-    let isActive: Bool
-    let gesture: G
-
-    func body(content: Content) -> some View {
-        if isActive {
-            content
-                .contentShape(Rectangle())
-                .simultaneousGesture(gesture)
-        } else {
-            content
-        }
-    }
-}

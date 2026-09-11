@@ -27,6 +27,8 @@ struct HomeView: View {
     @State private var sessionBytesUsed: Int64 = 0
     @State private var livePingMs = 0
     @State private var shouldAutoConnect = false
+    @State private var showsVPNPermissionRequest = false
+    @State private var didAutoPresentRenewalPanel = false
     @State private var statsTask: Task<Void, Never>?
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
     @AppStorage("velvet.panelDetentMode") private var panelDetentMode = VPNPanelDetentMode.stepped
@@ -84,7 +86,16 @@ struct HomeView: View {
             VPNConnectionInfoView(
                 resolvedConnection: resolvedConnection,
                 connectedAt: connectedAt,
-                mockPublicIP: mockPublicIP
+                mockPublicIP: mockPublicIP,
+                regionLabel: resolvedConnection?.location.name ?? selectedLocation.name,
+                pingMs: livePingMs,
+                downloadRate: downloadRate,
+                uploadRate: uploadRate,
+                usageFraction: sessionUsageFraction,
+                sessionDataUsedText: sessionDataUsedText,
+                providerMessage: resolvedConnection.flatMap { connection in
+                    providerStore.provider(id: connection.provider.id)?.providerMessage
+                }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -119,9 +130,69 @@ struct HomeView: View {
             }
         }
         .onAppear {
+#if DEBUG
+            configurePromoDemoIfNeeded()
+            if providerStore.activePrototypeScenario == .importedOnly {
+                applyImportedOnlyDemoSelection()
+            } else {
+                restoreLastLocationSelection()
+            }
+#else
             restoreLastLocationSelection()
+#endif
+            presentRenewalPanelIfNeeded()
+            if route == .permission {
+                route = .home
+                requestVPNPermissionAfterImport()
+            }
             guard autoConnect, route == .home, connectionState == .disconnected else { return }
             shouldAutoConnect = true
+        }
+        .onChange(of: route) { _, newRoute in
+            if newRoute == .permission {
+                route = .home
+                requestVPNPermissionAfterImport()
+            }
+        }
+        .alert(
+            "\"Velvet\" Would Like to Add VPN Configurations",
+            isPresented: $showsVPNPermissionRequest
+        ) {
+            Button("Don't Allow", role: .cancel) {}
+            Button("Allow") {
+                grantVPNPermissionAndConnect()
+            }
+        } message: {
+            Text("All network activity may be filtered or monitored.")
+        }
+    }
+
+    private func requestVPNPermissionAfterImport() {
+        guard !providerStore.hasSeenVPNPermission else {
+            shouldAutoConnect = true
+            return
+        }
+        showsVPNPermissionRequest = true
+    }
+
+    private func grantVPNPermissionAndConnect() {
+        providerStore.markVPNPermissionSeen()
+        shouldAutoConnect = true
+    }
+
+    private func presentRenewalPanelIfNeeded() {
+        guard route == .home else { return }
+        guard !didAutoPresentRenewalPanel else { return }
+        guard VPNProviderAvailabilitySummary.anyNeedsRenewalAttention(
+            in: providerStore.providers,
+            hiddenBannerIDs: providerStore.hiddenRenewalBannerIDs
+        ) else {
+            return
+        }
+        guard panelPosition == .island else { return }
+        didAutoPresentRenewalPanel = true
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            panelPosition = .intermediate
         }
     }
 
@@ -301,24 +372,73 @@ struct HomeView: View {
     }
 
     private var settingsSheet: some View {
-        HomeSettingsView(providerStore: providerStore) { importedName in
-            homeFormat = .networksAndLocations
-            importToastMessage = "✓  \(importedName) added from clipboard"
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation {
-                    importToastMessage = nil
-                }
-            }
+        Group {
+#if DEBUG
+            HomeSettingsView(
+                providerStore: providerStore,
+                devRuntime: devRuntime,
+                onImportFromClipboard: handleClipboardImport
+            )
+#else
+            HomeSettingsView(
+                providerStore: providerStore,
+                onImportFromClipboard: handleClipboardImport
+            )
+#endif
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 
+    private func handleClipboardImport(_ importedName: String) {
+        homeFormat = .networksAndLocations
+        importToastMessage = "✓  \(importedName) added from clipboard"
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation {
+                importToastMessage = nil
+            }
+        }
+    }
+
+#if DEBUG
+    private var devRuntime: VPNDevRuntime {
+        VPNDevRuntime(
+            route: $route,
+            panelPosition: $panelPosition,
+            connectionState: $connectionState,
+            resolvedConnection: $resolvedConnection,
+            connectedAt: $connectedAt,
+            livePingMs: $livePingMs,
+            downloadRate: $downloadRate,
+            uploadRate: $uploadRate,
+            sessionBytesUsed: $sessionBytesUsed,
+            isSwitchingServer: $isSwitchingServer,
+            locationSelection: $locationSelection,
+            selectionSource: $selectionSource,
+            onDismissSettings: { showsSettings = false }
+        )
+    }
+#endif
+
+    private func applyImportedOnlyDemoSelection() {
+        guard let demo = VPNPrototypeScenario.importedOnly.demoLocationSelection(
+            scope: providerStore.providerScope
+        ) else { return }
+        locationSelection = demo
+        selectionSource = .useCase(VPNUseCaseMenuChoice.matching(demo) ?? .smart)
+    }
+
     private func restoreLastLocationSelection() {
         guard connectLastLocation else { return }
         if let job = VPNUserJob(rawValue: defaultUserJobRaw) {
-            locationSelection = .smartJob(job, scope: providerStore.providerScope)
+            providerStore.activateVelvetForPresetSelection()
+            let selection = VPNLocationSelection.smartJob(job, scope: providerStore.providerScope)
+            locationSelection = VPNConnectionPlanner.reconcileSelection(
+                selection,
+                providers: providerStore.providers,
+                storeScope: providerStore.providerScope
+            )
             selectionSource = .useCase(VPNUseCaseMenuChoice.matching(locationSelection) ?? .smart)
         }
     }
@@ -483,21 +603,18 @@ struct HomeView: View {
 
     private func handleVelvetTrial() {
         providerStore.resetToVelvetOnly()
+        providerStore.advancePrototypeCycle()
         homeFormat = .networksAndLocations
         isAddingConfiguration = false
-        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
-            route = .home
-        }
+        transitionAfterOnboardingSuccess()
     }
 
     private func handleImportSuccess(_ provider: VPNProvider) {
+        providerStore.advancePrototypeCycle()
         homeFormat = .networksAndLocations
         isAddingConfiguration = false
         importToastMessage = "✓  \(provider.name) added · \(provider.subtitle)"
-        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
-            route = .home
-            panelPosition = .expanded
-        }
+        transitionAfterOnboardingSuccess(expanded: true)
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))
@@ -507,10 +624,41 @@ struct HomeView: View {
         }
     }
 
+    private func transitionAfterOnboardingSuccess(expanded: Bool = false) {
+        withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
+            route = .home
+            if expanded {
+                panelPosition = .expanded
+            }
+        }
+        requestVPNPermissionAfterImport()
+    }
+
     private func handleImportCancel() {
         isAddingConfiguration = false
         withAnimation(VelvetMotion.route(reduceMotion: reduceMotion)) {
             route = .home
         }
     }
+
+#if DEBUG
+    private func configurePromoDemoIfNeeded() {
+        guard CommandLine.arguments.contains("--show-home") else { return }
+
+        if CommandLine.arguments.contains("--expiring-soon") {
+            providerStore.applyPrototypeScenario(.importedExpired)
+            homeFormat = .networksAndLocations
+            panelPosition = .intermediate
+        } else if CommandLine.arguments.contains("--promo-demo") {
+            providerStore.applyPrototypeScenario(.importedOnly)
+            homeFormat = .networksAndLocations
+            panelPosition = .island
+            applyImportedOnlyDemoSelection()
+        } else if CommandLine.arguments.contains("--multi-provider") {
+            providerStore.applyPrototypeScenario(.velvetPlusImported)
+            homeFormat = .networksAndLocations
+            panelPosition = .island
+        }
+    }
+#endif
 }

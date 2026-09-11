@@ -51,6 +51,15 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         return !providerMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Rich multi-line announcements shown in the expanded stats area.
+    /// Short traffic summaries belong in list subtitles only.
+    var showsDetailMessage: Bool {
+        guard let providerMessage else { return false }
+        let trimmed = providerMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.contains("\n") || trimmed.count > 80
+    }
+
     var subtitle: String {
         switch status {
         case let .active(locationCount, trafficRemaining):
@@ -109,6 +118,109 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         if days < 0 { return "Expired" }
         if days == 0 { return "0 days left" }
         return "\(days) days left"
+    }
+
+    var needsRenewalWarning: Bool {
+        guard status.isActive, let expiresAt else { return false }
+        let days = Calendar.current.dateComponents([.day], from: .now, to: expiresAt).day ?? 0
+        return days >= 0 && days <= 7
+    }
+
+    /// Expired or expiring soon — show the renewal card before Velvet upsell.
+    var needsSubscriptionRenewal: Bool {
+        if status == .expired { return true }
+        return needsRenewalWarning
+    }
+
+    var usageSummaryLabel: String? {
+        guard status.isActive else { return nil }
+        switch status {
+        case let .active(_, trafficRemaining):
+            if let daysRemainingLabel {
+                return "\(trafficRemaining), \(daysRemainingLabel)"
+            }
+            return trafficRemaining
+        case .expired:
+            return nil
+        }
+    }
+
+    /// Secondary line in the multi-provider list: locations and traffic only.
+    var networksListSubtitle: String {
+        switch status {
+        case let .active(locationCount, trafficRemaining):
+            "\(locationCount) locations · \(trafficRemaining)"
+        case .expired:
+            "Subscription expired"
+        }
+    }
+
+    func tunnelStatusLabel(isConnected: Bool, activeProviderID: UUID?) -> String {
+        switch status {
+        case .expired:
+            "Expired"
+        case .active:
+            if isConnected, activeProviderID == id {
+                "Connected"
+            } else {
+                "Disconnected"
+            }
+        }
+    }
+}
+
+enum VPNProviderAvailabilitySummary {
+    static func subtitle(for providers: [VPNProvider]) -> String {
+        let available = providers.filter(\.status.isActive).count
+        let expired = providers.filter { $0.status == .expired }.count
+
+        switch (available, expired) {
+        case (0, let expired) where expired > 0:
+            return "\(expired) expired"
+        case (let available, 0):
+            return "\(available) available"
+        case (let available, let expired):
+            return "\(available) available, \(expired) expired"
+        }
+    }
+
+    static func hasActiveVelvet(in providers: [VPNProvider]) -> Bool {
+        providers.first(where: { $0.kind == .velvetFeatured })?.status.isActive == true
+    }
+
+    /// Purple stats shell — other VPN only, Velvet row not added yet (state 2).
+    static func showsVelvetStatsPromo(for providers: [VPNProvider]) -> Bool {
+        guard !hasActiveVelvet(in: providers) else { return false }
+        guard !providers.contains(where: { $0.kind == .velvetFeatured }) else { return false }
+        return providers.contains { $0.kind == .imported && $0.status.isActive }
+    }
+
+    /// Purple shell around an imported renewal card (state 6).
+    static func showsVelvetRenewalPromoShell(for renewalProvider: VPNProvider) -> Bool {
+        renewalProvider.kind == .imported && renewalProvider.needsSubscriptionRenewal
+    }
+
+    static func velvetNeedingRenewal(
+        in providers: [VPNProvider],
+        hiddenBannerIDs: Set<UUID> = []
+    ) -> VPNProvider? {
+        providers.first {
+            $0.kind == .velvetFeatured && showsRenewalAttention(for: $0, hiddenBannerIDs: hiddenBannerIDs)
+        }
+    }
+
+    static func showsRenewalAttention(
+        for provider: VPNProvider,
+        hiddenBannerIDs: Set<UUID> = []
+    ) -> Bool {
+        provider.needsSubscriptionRenewal && !hiddenBannerIDs.contains(provider.id)
+    }
+
+    static func anyNeedsRenewalAttention(
+        in providers: [VPNProvider],
+        hiddenBannerIDs: Set<UUID> = []
+    ) -> Bool {
+        providers.contains { showsRenewalAttention(for: $0, hiddenBannerIDs: hiddenBannerIDs) }
     }
 }
 
@@ -233,8 +345,8 @@ enum VPNSelectionSummary {
         selectedLocation: VPNLocation,
         isSwitchingServer: Bool = false
     ) -> String {
-        if case let .failed(message) = connectionState {
-            return message
+        if case let .failed(failure) = connectionState {
+            return failure.displayMessage
         }
 
         if connectionState == .connecting {
@@ -478,6 +590,146 @@ enum VPNConnectionPlanner {
         scope.filtered(providers).filter(\.isEligibleForAutoConnect)
     }
 
+    static func reconcileSelection(
+        _ selection: VPNLocationSelection,
+        providers: [VPNProvider],
+        storeScope: VPNProviderScope
+    ) -> VPNLocationSelection {
+        let correctedScope = correctedScope(
+            for: selection.scope,
+            providers: providers,
+            storeScope: storeScope
+        )
+
+        switch selection {
+        case .smartAuto:
+            return .smartAuto(scope: correctedScope)
+        case let .smartJob(job, _):
+            return .smartJob(job, scope: correctedScope)
+        case .manual:
+            return selection
+        }
+    }
+
+    static func smartAutoFallbackSelection(
+        providers: [VPNProvider],
+        preferredScope: VPNProviderScope,
+        storeScope: VPNProviderScope
+    ) -> VPNLocationSelection? {
+        let scope = correctedScope(
+            for: preferredScope,
+            providers: providers,
+            storeScope: storeScope
+        )
+        let selection = VPNLocationSelection.smartAuto(scope: scope)
+        guard resolve(providers: providers, selection: selection) != nil else { return nil }
+        return selection
+    }
+
+    static func diagnoseSelectionFailure(
+        providers: [VPNProvider],
+        selection: VPNLocationSelection
+    ) -> VPNSelectionMismatch? {
+        guard resolve(providers: providers, selection: selection) == nil else { return nil }
+
+        let providerName = primaryProviderName(providers: providers, selection: selection)
+
+        switch selection {
+        case let .smartJob(job, scope):
+            if case let .provider(id) = scope,
+               !providers.contains(where: { $0.id == id && $0.isEligibleForAutoConnect }) {
+                let label = VPNSelectionSummary.scopeLabel(for: scope, providers: providers)
+                return VPNSelectionMismatch(
+                    reason: .scopedProviderMissing(scopeLabel: label),
+                    providerName: providerName,
+                    selection: selection
+                )
+            }
+            if servers(for: job, scope: scope, providers: providers).isEmpty {
+                return VPNSelectionMismatch(
+                    reason: .presetUnavailable(job: job),
+                    providerName: providerName,
+                    selection: selection
+                )
+            }
+
+        case let .smartAuto(scope):
+            if case let .provider(id) = scope,
+               !providers.contains(where: { $0.id == id && $0.isEligibleForAutoConnect }) {
+                let label = VPNSelectionSummary.scopeLabel(for: scope, providers: providers)
+                return VPNSelectionMismatch(
+                    reason: .scopedProviderMissing(scopeLabel: label),
+                    providerName: providerName,
+                    selection: selection
+                )
+            }
+            if mergedLocations(from: scopedEligibleProviders(providers, scope: scope)).isEmpty {
+                return VPNSelectionMismatch(
+                    reason: .scopedProviderMissing(scopeLabel: "Selected network"),
+                    providerName: providerName,
+                    selection: selection
+                )
+            }
+
+        case let .manual(_, providerID):
+            if !providers.contains(where: { $0.id == providerID && $0.isEligibleForAutoConnect }) {
+                return VPNSelectionMismatch(
+                    reason: .scopedProviderMissing(scopeLabel: "Selected server"),
+                    providerName: providerName,
+                    selection: selection
+                )
+            }
+        }
+
+        return VPNSelectionMismatch(
+            reason: .presetUnavailable(job: .streaming),
+            providerName: providerName,
+            selection: selection
+        )
+    }
+
+    static func primaryProviderName(
+        providers: [VPNProvider],
+        selection: VPNLocationSelection
+    ) -> String {
+        switch selection.scope {
+        case .allNetworks:
+            if providers.count == 1 {
+                return providers[0].name
+            }
+            return providers.first(where: \.isEligibleForAutoConnect)?.name ?? "Your VPN"
+        case let .provider(id):
+            return providers.first(where: { $0.id == id })?.name ?? "Your VPN"
+        }
+    }
+
+    private static func correctedScope(
+        for selectionScope: VPNProviderScope,
+        providers: [VPNProvider],
+        storeScope: VPNProviderScope
+    ) -> VPNProviderScope {
+        let eligible = providers.filter(\.isEligibleForAutoConnect)
+
+        switch selectionScope {
+        case .allNetworks:
+            switch storeScope {
+            case .allNetworks:
+                return .allNetworks
+            case let .provider(id):
+                return eligible.contains(where: { $0.id == id }) ? .provider(id) : .allNetworks
+            }
+
+        case let .provider(id):
+            if eligible.contains(where: { $0.id == id }) {
+                return .provider(id)
+            }
+            if eligible.count == 1, let only = eligible.first {
+                return .provider(only.id)
+            }
+            return .allNetworks
+        }
+    }
+
     private static let europeanCountries: Set<String> = [
         "Finland", "Sweden", "Germany", "Netherlands", "Poland",
         "France", "United Kingdom", "Switzerland", "Turkey",
@@ -527,7 +779,7 @@ extension VPNProvider {
             ),
             VPNProvider(
                 id: UUID(uuidString: "A1000000-0000-0000-0000-000000000002")!,
-                name: "VPN name 2",
+                name: "NordVPN",
                 iconSymbol: "mountain.2.fill",
                 kind: .imported,
                 status: .active(locationCount: 412, trafficRemaining: "86 GB left"),
@@ -541,12 +793,12 @@ extension VPNProvider {
                 lastUpdated: Calendar.current.date(byAdding: .day, value: -1, to: .now),
                 expiresAt: provider2Expires,
                 includedInSmartAuto: true,
-                providerMessage: "Traffic: 86 GB left · Updated today",
-                providerMessageUpdatedAt: Calendar.current.date(byAdding: .day, value: -1, to: .now)
+                providerMessage: nil,
+                providerMessageUpdatedAt: nil
             ),
             VPNProvider(
                 id: UUID(uuidString: "A1000000-0000-0000-0000-000000000003")!,
-                name: "VPN name 3",
+                name: "Surfshark",
                 iconSymbol: "globe.europe.africa.fill",
                 kind: .imported,
                 status: .active(locationCount: 218, trafficRemaining: "34 GB left"),
@@ -568,7 +820,7 @@ extension VPNProvider {
             ),
             VPNProvider(
                 id: UUID(uuidString: "A1000000-0000-0000-0000-000000000004")!,
-                name: "VPN name 4",
+                name: "Proton VPN",
                 iconSymbol: "network",
                 kind: .imported,
                 status: .expired,
