@@ -63,10 +63,13 @@ struct VPNProviderMessageCard: View {
     var revealProgress: CGFloat = 1
     var showsConnectionStats: Bool = false
     var showsRenewalBanner: Bool = false
+    var selectionMismatch: VPNSelectionMismatch? = nil
     var showsVelvetStatsPromo: Bool = false
     var showsProvidersList: Bool = false
     var onStatsTap: (() -> Void)? = nil
     var onVelvetPromoTap: (() -> Void)? = nil
+    var onUseSmartAuto: (() -> Void)? = nil
+    var onBrowseLocations: (() -> Void)? = nil
     var onRenewSubscription: ((UUID) -> Void)? = nil
     var onHideRenewalBanner: ((UUID) -> Void)? = nil
     var onOpenProvider: ((UUID) -> Void)? = nil
@@ -115,11 +118,16 @@ struct VPNProviderMessageCard: View {
         statsEmbeddedInPromo && showsExpandedChrome && !isSingleProviderExpandedCard
     }
 
+    private var showsSelectionMismatchBanner: Bool {
+        selectionMismatch != nil && showsExpandedChrome
+    }
+
     private var showsSecondaryCard: Bool {
         if showsConnectionStats { return true }
         if isSingleProviderExpandedCard { return true }
         if statsEmbeddedInPromo && !showsExpandedChrome { return true }
         if showsRenewalBanner { return showsExpandedChrome }
+        if showsSelectionMismatchBanner { return false }
         if velvetRenewalProvider != nil && velvetRenewalProvider?.id != liveProvider.id {
             return showsExpandedChrome
         }
@@ -133,7 +141,9 @@ struct VPNProviderMessageCard: View {
                     clippedRenewalBanner(for: velvet)
                 }
 
-                if showsRenewalBanner {
+                if showsSelectionMismatchBanner {
+                    clippedSelectionMismatchBlock
+                } else if showsRenewalBanner {
                     clippedRenewalBlock
                 } else if showsPromoShell, let onVelvetPromoTap {
                     VelvetPromoCard(onPromoTap: onVelvetPromoTap) {
@@ -159,6 +169,30 @@ struct VPNProviderMessageCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var clippedSelectionMismatchBlock: some View {
+        PanelRevealHeightClip(progress: detailsReveal) {
+            selectionMismatchBanner
+        }
+    }
+
+    @ViewBuilder
+    private var selectionMismatchBanner: some View {
+        if let mismatch = selectionMismatch,
+           let onVelvetPromoTap,
+           let onUseSmartAuto,
+           let onBrowseLocations {
+            VelvetPromoCard(onPromoTap: onVelvetPromoTap) {
+                VPNSubscriptionExpiryBanner(
+                    mismatch: mismatch,
+                    onUseSmartAuto: onUseSmartAuto,
+                    onBrowseLocations: onBrowseLocations,
+                    embeddedInPromoCard: true
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -260,6 +294,9 @@ struct VPNProviderMessageCard: View {
 
     private var accessibilityLabel: String {
         var parts = ["Connection stats"]
+        if selectionMismatch != nil {
+            parts.append(selectionMismatch?.bannerMessage ?? "Connection preset unavailable")
+        }
         if showsRenewalBanner || velvetRenewalProvider != nil {
             parts.append("Your subscription needs renewal")
         }

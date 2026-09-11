@@ -230,15 +230,6 @@ struct VPNNetworksIslandPanel: View {
 
         if showsBlock {
             AnimatedPanelStatsReveal(context: context) { reveal in
-                if let selectionMismatch, showsMismatchGap {
-                    VPNSelectionGapCard(
-                        mismatch: selectionMismatch,
-                        onUseSmartAuto: connectWithSmartAutoFallback,
-                        onBrowseLocations: expandPanelForLocationBrowse
-                    )
-                    .padding(.horizontal, VelvetMetrics.rowHorizontalPadding * reveal)
-                }
-
                 VPNProviderMessageCard(
                     provider: displayProvider,
                     regionLabel: statsRegionLabel,
@@ -250,10 +241,13 @@ struct VPNNetworksIslandPanel: View {
                     revealProgress: reveal,
                     showsConnectionStats: connectionState == .connected || isSingleProviderExpanded,
                     showsRenewalBanner: showsRenewalBanner,
+                    selectionMismatch: showsMismatchGap ? selectionMismatch : nil,
                     showsVelvetStatsPromo: showsVelvetStatsPromo && !showsMismatchGap,
                     showsProvidersList: providerStore.showsProviderPicker,
                     onStatsTap: context.isStatsExpanded ? { openConnectionInfo() } : nil,
                     onVelvetPromoTap: openVelvetPaywall,
+                    onUseSmartAuto: connectWithSmartAutoFallback,
+                    onBrowseLocations: expandPanelForLocationBrowse,
                     onRenewSubscription: openRenewalWebsite,
                     onHideRenewalBanner: hideRenewalBanner,
                     onOpenProvider: { detailProviderID = ProviderDetailRoute(id: $0) },
@@ -842,6 +836,20 @@ struct VPNNetworksIslandPanel: View {
                 providers: providers,
                 selection: workingSelection
             )
+
+            let diagnosedMismatch = VPNConnectionPlanner.diagnoseSelectionFailure(
+                providers: providers,
+                selection: workingSelection
+            )
+
+            if resolved == nil,
+               !shouldFail,
+               let diagnosedMismatch,
+               diagnosedMismatch.isPresetUnavailable {
+                providerStore.importedOnlyDemoAwaitingMismatch = false
+                presentSelectionMismatch(diagnosedMismatch)
+                return
+            }
 
             let skipSilentFallback = providerStore.importedOnlyDemoAwaitingMismatch
 

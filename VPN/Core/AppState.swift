@@ -44,26 +44,22 @@ struct VPNSelectionMismatch: Equatable {
         }
     }
 
-    var gapCardTitle: String {
+    var bannerMessage: String {
         switch reason {
-        case .presetUnavailable(let job):
-            "\(job.title) isn't available on \(providerName)"
-        case .scopedProviderMissing:
-            "Can't connect with this network"
+        case .presetUnavailable(let job) where job == .mobileLTE:
+            "\(providerName) doesn't offer LTE servers for this preset"
+        case .presetUnavailable(let job) where job == .whitelistForeign:
+            "\(providerName) doesn't support whitelist routing for this preset"
+        case .presetUnavailable:
+            "\(providerName) doesn't have servers that match this preset"
+        case .scopedProviderMissing(let scopeLabel):
+            "\(scopeLabel) isn't available through \(providerName)"
         }
     }
 
-    var gapCardBody: String {
-        switch reason {
-        case .presetUnavailable(let job) where job == .mobileLTE:
-            "\(providerName) doesn't offer LTE servers for this preset. Use Smart Auto or browse other locations."
-        case .presetUnavailable(let job) where job == .whitelistForeign:
-            "\(providerName) doesn't support whitelist routing for this preset. Use Smart Auto or pick another location."
-        case .presetUnavailable:
-            "\(providerName) doesn't have servers that match this preset. Use Smart Auto or pick another location."
-        case .scopedProviderMissing(let scopeLabel):
-            "\(scopeLabel) isn't available through \(providerName). Use Smart Auto or pick another location."
-        }
+    var isPresetUnavailable: Bool {
+        if case .presetUnavailable = reason { return true }
+        return false
     }
 }
 

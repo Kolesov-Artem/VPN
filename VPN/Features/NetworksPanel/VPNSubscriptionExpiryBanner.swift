@@ -1,28 +1,80 @@
 import SwiftUI
 
+enum VPNAttentionBannerMode: Equatable {
+    case subscriptionRenewal(providerKind: VPNProvider.Kind, isExpired: Bool)
+    case selectionMismatch(VPNSelectionMismatch)
+}
+
 struct VPNSubscriptionExpiryBanner: View {
-    let providerKind: VPNProvider.Kind
-    let isExpired: Bool
-    let onRenew: () -> Void
-    let onHide: () -> Void
+    let mode: VPNAttentionBannerMode
+    let onPrimary: () -> Void
+    let onSecondary: () -> Void
     /// When true, the parent promo card supplies the white surface and purple frame.
     var embeddedInPromoCard: Bool = false
 
-    private var isVelvet: Bool {
-        providerKind == .velvetFeatured
+    init(
+        providerKind: VPNProvider.Kind,
+        isExpired: Bool,
+        onRenew: @escaping () -> Void,
+        onHide: @escaping () -> Void,
+        embeddedInPromoCard: Bool = false
+    ) {
+        mode = .subscriptionRenewal(providerKind: providerKind, isExpired: isExpired)
+        onPrimary = onRenew
+        onSecondary = onHide
+        self.embeddedInPromoCard = embeddedInPromoCard
+    }
+
+    init(
+        mismatch: VPNSelectionMismatch,
+        onUseSmartAuto: @escaping () -> Void,
+        onBrowseLocations: @escaping () -> Void,
+        embeddedInPromoCard: Bool = false
+    ) {
+        mode = .selectionMismatch(mismatch)
+        onPrimary = onUseSmartAuto
+        onSecondary = onBrowseLocations
+        self.embeddedInPromoCard = embeddedInPromoCard
+    }
+
+    private var isVelvetRenewal: Bool {
+        if case let .subscriptionRenewal(providerKind, _) = mode {
+            return providerKind == .velvetFeatured
+        }
+        return false
     }
 
     private var message: String {
-        if isVelvet {
-            if isExpired {
-                "Your Velvet subscription expired, renew to continue to use it"
+        switch mode {
+        case let .subscriptionRenewal(providerKind, isExpired):
+            if providerKind == .velvetFeatured {
+                if isExpired {
+                    "Your Velvet subscription expired, renew to continue to use it"
+                } else {
+                    "Your Velvet subscription will end soon, renew to continue to use it"
+                }
+            } else if isExpired {
+                "Your subscription expired, renew to continue to use it"
             } else {
-                "Your Velvet subscription will end soon, renew to continue to use it"
+                "Your subscription will end soon, renew to continue to use it"
             }
-        } else if isExpired {
-            "Your subscription expired, renew to continue to use it"
-        } else {
-            "Your subscription will end soon, renew to continue to use it"
+
+        case let .selectionMismatch(mismatch):
+            mismatch.bannerMessage
+        }
+    }
+
+    private var primaryTitle: String {
+        switch mode {
+        case .subscriptionRenewal: "Renew"
+        case .selectionMismatch: "Use Smart Auto"
+        }
+    }
+
+    private var secondaryTitle: String {
+        switch mode {
+        case .subscriptionRenewal: "Hide"
+        case .selectionMismatch: "Browse locations"
         }
     }
 
@@ -36,21 +88,21 @@ struct VPNSubscriptionExpiryBanner: View {
 
             HStack(spacing: 10) {
                 Group {
-                    if isVelvet {
-                        Button(action: onRenew) {
-                            renewButtonLabel
+                    if isVelvetRenewal {
+                        Button(action: onPrimary) {
+                            primaryButtonLabel
                         }
                         .buttonStyle(PressScaleButtonStyle())
                     } else {
-                        Button(action: onRenew) {
-                            renewButtonLabel
+                        Button(action: onPrimary) {
+                            primaryButtonLabel
                         }
                         .buttonStyle(.plain)
                     }
                 }
 
-                Button(action: onHide) {
-                    Text("Hide")
+                Button(action: onSecondary) {
+                    Text(secondaryTitle)
                         .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -70,14 +122,14 @@ struct VPNSubscriptionExpiryBanner: View {
         .accessibilityLabel(message)
     }
 
-    private var renewButtonLabel: some View {
-        Text("Renew")
-            .font(.body.weight(isVelvet ? .semibold : .medium))
-            .foregroundStyle(isVelvet ? .white : .primary)
+    private var primaryButtonLabel: some View {
+        Text(primaryTitle)
+            .font(.body.weight(isVelvetRenewal ? .semibold : .medium))
+            .foregroundStyle(isVelvetRenewal ? .white : .primary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .background(
-                isVelvet ? VelvetTheme.accent : Color(.secondarySystemFill),
+                isVelvetRenewal ? VelvetTheme.accent : Color(.secondarySystemFill),
                 in: Capsule()
             )
     }
