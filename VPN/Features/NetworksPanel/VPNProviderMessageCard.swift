@@ -65,14 +65,14 @@ struct VPNProviderMessageCard: View {
     var showsRenewalBanner: Bool = false
     var selectionMismatch: VPNSelectionMismatch? = nil
     var showsVelvetStatsPromo: Bool = false
-    var showsProvidersList: Bool = false
+    var statsUsageLeadingOverride: String? = nil
+    var supplementalUsage: ConnectionStatsStrip.SupplementalUsageBar? = nil
     var onStatsTap: (() -> Void)? = nil
     var onVelvetPromoTap: (() -> Void)? = nil
     var onUseSmartAuto: (() -> Void)? = nil
     var onBrowseLocations: (() -> Void)? = nil
     var onRenewSubscription: ((UUID) -> Void)? = nil
     var onHideRenewalBanner: ((UUID) -> Void)? = nil
-    var onOpenProvider: ((UUID) -> Void)? = nil
 
     @Bindable var providerStore: VPNProviderStore
 
@@ -155,15 +155,6 @@ struct VPNProviderMessageCard: View {
             if showsSecondaryCard {
                 statsBlock
             }
-
-            if showsProvidersList, let onOpenProvider, detailsReveal > 0.01 {
-                VPNCompactNetworksCard(
-                    providerStore: providerStore,
-                    showsBackground: true,
-                    summaryTitle: "All \(providerStore.providers.count) providers",
-                    onOpenProvider: onOpenProvider
-                )
-            }
         }
         .padding(.horizontal, chromeHorizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -244,13 +235,15 @@ struct VPNProviderMessageCard: View {
                 uploadRate: uploadRate,
                 usageFraction: usageFraction,
                 sessionDataUsedText: usageTrailingLabel,
+                usageLeadingOverride: statsUsageLeadingOverride,
+                supplementalUsage: supplementalUsage,
                 showsBackground: false,
                 usesContentPadding: false,
-                progressTint: detailsReveal > 0.45 ? .primary : VelvetTheme.accent,
+                progressTint: VelvetTheme.trafficProgressTint,
                 onTap: onStatsTap
             )
         } details: {
-            if showsProviderDetailMessage, let message = liveProvider.providerMessage {
+            if showsProviderDetailMessage, let message = liveProvider.displayedProviderMessage {
                 expandedMessageSection(message)
             }
         }
@@ -264,9 +257,11 @@ struct VPNProviderMessageCard: View {
             uploadRate: uploadRate,
             usageFraction: usageFraction,
             sessionDataUsedText: usageTrailingLabel,
+            usageLeadingOverride: statsUsageLeadingOverride,
+            supplementalUsage: supplementalUsage,
             showsBackground: false,
             usesContentPadding: false,
-            progressTint: VelvetTheme.accent,
+            progressTint: VelvetTheme.trafficProgressTint,
             onTap: onStatsTap
         )
     }
@@ -303,7 +298,7 @@ struct VPNProviderMessageCard: View {
         if showsVelvetStatsPromo {
             parts.append("Or try Velvet VPN, it's better")
         }
-        if let message = liveProvider.providerMessage, showsProviderDetailMessage {
+        if let message = liveProvider.displayedProviderMessage, showsProviderDetailMessage {
             parts.append(message)
         }
         return parts.joined(separator: ". ")

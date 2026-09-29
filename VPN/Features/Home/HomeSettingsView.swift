@@ -28,7 +28,7 @@ struct HomeSettingsView: View {
     @State private var showsResetConfirmation = false
     @State private var showsClearRecentConfirmation = false
 
-    var onImportFromClipboard: ((String) -> Void)?
+    var onImportFromClipboard: ((VPNProvider) -> Void)?
 
     private var defaultUserJob: Binding<VPNUserJob> {
         Binding(
@@ -220,7 +220,7 @@ struct HomeSettingsView: View {
 
         switch providerStore.importFromURL(clipboard) {
         case let .success(provider):
-            onImportFromClipboard?(provider.name)
+            onImportFromClipboard?(provider)
             importMessage = "\(provider.name) added from clipboard."
         case let .failure(error):
             importMessage = error.localizedDescription

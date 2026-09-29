@@ -2,16 +2,24 @@ import SwiftUI
 
 /// Live session stats shown inside the collapsed island and pinned in the sheet.
 struct ConnectionStatsStrip: View {
+    struct SupplementalUsageBar: Equatable {
+        let leading: String
+        let trailing: String
+        let fraction: Double
+    }
+
     let regionLabel: String
     let pingMs: Int
     let downloadRate: String
     let uploadRate: String
     var usageFraction: Double = 0
     var sessionDataUsedText: String = "0 MB this session"
+    var usageLeadingOverride: String? = nil
+    var supplementalUsage: SupplementalUsageBar? = nil
     var showsBackground: Bool = false
     var usesContentPadding: Bool = true
     var cornerRadius: CGFloat = VelvetMetrics.statsStripCornerRadius
-    var progressTint: Color = VelvetTheme.accent
+    var progressTint: Color = VelvetTheme.trafficProgressTint
     var onTap: (() -> Void)? = nil
 
     var body: some View {
@@ -31,7 +39,20 @@ struct ConnectionStatsStrip: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: VelvetMetrics.statsStripSectionSpacing) {
-            usageSection
+            usageSection(
+                leading: usageLeadingOverride ?? usagePercentText,
+                trailing: sessionDataUsedText,
+                fraction: usageFraction,
+                tint: progressTint
+            )
+            if let supplementalUsage {
+                usageSection(
+                    leading: supplementalUsage.leading,
+                    trailing: supplementalUsage.trailing,
+                    fraction: supplementalUsage.fraction,
+                    tint: progressTint
+                )
+            }
             statsRow
         }
         .padding(usesContentPadding ? VelvetMetrics.statsStripPadding : EdgeInsets())
@@ -43,21 +64,24 @@ struct ConnectionStatsStrip: View {
         .contentShape(Rectangle())
     }
 
-    private var usageSection: some View {
+    private func usageSection(
+        leading: String,
+        trailing: String,
+        fraction: Double,
+        tint: Color
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(usagePercentText)
-                    .contentTransition(.numericText())
+                Text(leading)
                 Spacer(minLength: 8)
-                Text(sessionDataUsedText)
-                    .contentTransition(.numericText())
+                Text(trailing)
             }
             .font(VelvetTypography.statsStripLabel)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .minimumScaleFactor(0.9)
 
-            usageProgressBar
+            usageProgressBar(fraction: fraction, tint: tint)
         }
     }
 
@@ -66,15 +90,15 @@ struct ConnectionStatsStrip: View {
         return "\(percent)% used"
     }
 
-    private var usageProgressBar: some View {
+    private func usageProgressBar(fraction: Double, tint: Color) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: VelvetMetrics.statsStripProgressCornerRadius, style: .continuous)
                     .fill(VelvetTheme.statsStripProgressTrack)
 
                 RoundedRectangle(cornerRadius: VelvetMetrics.statsStripProgressCornerRadius, style: .continuous)
-                    .fill(progressTint)
-                    .frame(width: geometry.size.width * usageFraction.clamped(to: 0...1))
+                    .fill(tint)
+                    .frame(width: geometry.size.width * fraction.clamped(to: 0...1))
             }
         }
         .frame(height: VelvetMetrics.statsStripProgressHeight)
@@ -120,13 +144,20 @@ struct ConnectionStatsStrip: View {
                 .font(VelvetTypography.statsStripLabel)
                 .foregroundStyle(.secondary)
 
-            Text(value)
-                .font(VelvetTypography.statsStripValue)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+            ZStack(alignment: .leading) {
+                Text(VelvetMetrics.statsStripLocationPlaceholder)
+                    .font(VelvetTypography.statsStripValue)
+                    .hidden()
+                    .accessibilityHidden(true)
+
+                Text(value)
+                    .font(VelvetTypography.statsStripValue)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(minWidth: 0, alignment: .leading)
     }
 
     private func metricColumn(
@@ -177,7 +208,6 @@ struct ConnectionStatsStrip: View {
                 Text(value)
                     .font(VelvetTypography.statsStripValueNumeric)
                     .foregroundStyle(.primary)
-                    .contentTransition(.numericText())
 
                 if !unit.isEmpty {
                     Text(" \(unit)")
@@ -304,7 +334,7 @@ struct ConnectionStatsRevealShell<Details: View>: View {
         .padding(cardPadding)
         .background {
             RoundedRectangle(
-                cornerRadius: VelvetMetrics.contentSurfaceCornerRadius,
+                cornerRadius: VelvetMetrics.groupedCornerRadius,
                 style: .continuous
             )
             .fill(VelvetTheme.contentSurface)

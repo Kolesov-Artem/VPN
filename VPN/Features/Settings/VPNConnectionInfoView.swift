@@ -10,7 +10,10 @@ struct VPNConnectionInfoView: View {
     var uploadRate: String = "0 KB/s"
     var usageFraction: Double = 0
     var sessionDataUsedText: String = "0 MB this session"
+    var usageLeadingOverride: String? = nil
+    var supplementalUsage: ConnectionStatsStrip.SupplementalUsageBar? = nil
     var providerMessage: String?
+    var usesRelease1NavigationTitle = false
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("velvet.killSwitch") private var killSwitch = false
@@ -46,11 +49,12 @@ struct VPNConnectionInfoView: View {
                         uploadRate: uploadRate,
                         usageFraction: usageFraction,
                         sessionDataUsedText: sessionDataUsedText,
+                        usageLeadingOverride: usageLeadingOverride,
+                        supplementalUsage: supplementalUsage,
                         showsBackground: false,
                         usesContentPadding: false,
-                        progressTint: .primary
+                        progressTint: VelvetTheme.trafficProgressTint
                     )
-                    .padding(.vertical, 4)
                 }
 
                 if let providerMessage, !providerMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -104,8 +108,7 @@ struct VPNConnectionInfoView: View {
                     }
                 }
             }
-            .listSectionSpacing(.compact)
-            .navigationTitle("Connection info")
+            .navigationTitle(usesRelease1NavigationTitle ? "VPN info" : "Connection info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

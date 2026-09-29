@@ -10,6 +10,21 @@ final class PanelScrollViewHandle {
         guard let scrollView else { return }
         let offset = scrollView.contentOffset
         DispatchQueue.main.async {
+            Self.applyOffset(offset, to: scrollView)
+        }
+    }
+
+    /// After an accordion toggle, keep a header at the same place on screen.
+    func shiftContentOffset(by delta: CGFloat) {
+        guard let scrollView, abs(delta) > 0.5 else { return }
+        var offset = scrollView.contentOffset
+        offset.y += delta
+        Self.applyOffset(offset, to: scrollView)
+    }
+
+    private static func applyOffset(_ offset: CGPoint, to scrollView: UIScrollView) {
+        UIView.performWithoutAnimation {
+            scrollView.layoutIfNeeded()
             scrollView.setContentOffset(offset, animated: false)
         }
     }

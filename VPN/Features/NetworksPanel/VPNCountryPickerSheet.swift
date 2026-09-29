@@ -28,7 +28,7 @@ struct VPNCountryPickerSheet: View {
                                 .font(.caption.monospacedDigit())
                             if isSelected(candidate) {
                                 Image(systemName: "checkmark")
-                                    .foregroundStyle(VelvetTheme.accent)
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }

@@ -75,7 +75,7 @@ struct VelvetVPNStatisticsCard: View {
                     sessionDataUsedText: liveStats.sessionDataUsedText,
                     showsBackground: false,
                     usesContentPadding: false,
-                    progressTint: .primary
+                    progressTint: VelvetTheme.trafficProgressTint
                 )
 
                 if providerMessage != nil {

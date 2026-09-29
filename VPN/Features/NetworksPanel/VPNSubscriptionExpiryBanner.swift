@@ -114,7 +114,7 @@ struct VPNSubscriptionExpiryBanner: View {
         .padding(embeddedInPromoCard ? 0 : 16)
         .background {
             if !embeddedInPromoCard {
-                RoundedRectangle(cornerRadius: VelvetMetrics.contentSurfaceCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: VelvetMetrics.groupedCornerRadius, style: .continuous)
                     .fill(VelvetTheme.contentSurface)
             }
         }

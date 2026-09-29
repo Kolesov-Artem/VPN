@@ -96,7 +96,8 @@ struct BottomPanelDetents {
         screenHeight: CGFloat,
         safeAreaBottom: CGFloat,
         isAccessibilitySize: Bool,
-        showsSessionStats: Bool = false
+        showsSessionStats: Bool = false,
+        showsFavouriteStrip: Bool = false
     ) -> BottomPanelDetents {
         let expandedHeight = screenHeight * 0.92
         let rawIntermediateHeight = screenHeight * (isAccessibilitySize ? 0.64 : 0.56)
@@ -104,7 +105,8 @@ struct BottomPanelDetents {
             expandedHeight: expandedHeight,
             rawIntermediateHeight: rawIntermediateHeight,
             showsSessionStats: showsSessionStats,
-            isAccessibilitySize: isAccessibilitySize
+            isAccessibilitySize: isAccessibilitySize,
+            showsFavouriteStrip: showsFavouriteStrip
         )
 
         return BottomPanelDetents(
@@ -123,7 +125,8 @@ struct BottomPanelDetents {
         safeAreaBottom: CGFloat,
         safeAreaTop: CGFloat,
         isAccessibilitySize: Bool,
-        showsSessionStats: Bool = false
+        showsSessionStats: Bool = false,
+        showsFavouriteStrip: Bool = false
     ) -> BottomPanelDetents {
         let topMargin = max(safeAreaTop - VelvetTheme.expandedTopInsetReduction, 0)
         let expandedHeight = screenHeight - topMargin
@@ -132,7 +135,8 @@ struct BottomPanelDetents {
             expandedHeight: expandedHeight,
             rawIntermediateHeight: rawIntermediateHeight,
             showsSessionStats: showsSessionStats,
-            isAccessibilitySize: isAccessibilitySize
+            isAccessibilitySize: isAccessibilitySize,
+            showsFavouriteStrip: showsFavouriteStrip
         )
 
         return BottomPanelDetents(
@@ -150,12 +154,14 @@ struct BottomPanelDetents {
         expandedHeight: CGFloat,
         rawIntermediateHeight: CGFloat,
         showsSessionStats: Bool,
-        isAccessibilitySize: Bool
+        isAccessibilitySize: Bool,
+        showsFavouriteStrip: Bool = false
     ) -> (island: CGFloat, intermediate: CGFloat) {
         let minGap: CGFloat = 8
         let rawIsland = VelvetCollapsedIslandLayout.islandHeight(
             showsSessionStats: showsSessionStats,
-            isAccessibilitySize: isAccessibilitySize
+            isAccessibilitySize: isAccessibilitySize,
+            showsFavouriteStrip: showsFavouriteStrip
         )
         var intermediate = max(rawIntermediateHeight, rawIsland + minGap)
         intermediate = min(intermediate, expandedHeight - minGap)

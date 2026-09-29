@@ -7,11 +7,7 @@ struct VPNIslandPanel: View {
     @Binding var isPanelInteracting: Bool
     var onShowConnectionInfo: (() -> Void)? = nil
 
-    let downloadRate: String
-    let uploadRate: String
-    let pingMs: Int
-    let usageFraction: Double
-    let sessionDataUsedText: String
+    var sessionStats: VPNSessionStatsModel
 
     let safeAreaBottom: CGFloat
     let safeAreaTop: CGFloat
@@ -39,7 +35,9 @@ struct VPNIslandPanel: View {
         ) { context in
             panelHeader(context: context)
         } stats: { context in
-            connectionStatsStrip(context: context)
+            SessionStatsConsumer(model: sessionStats, readsLiveValues: true) { live in
+                connectionStatsStrip(context: context, live: live)
+            }
         } footer: {
             connectionButton
         } scrollContent: { context in
@@ -55,6 +53,8 @@ struct VPNIslandPanel: View {
                 bottomMargin: searchBottomInset,
                 safeAreaBottom: searchBottomInset
             )
+        } favouriteDock: {
+            EmptyView()
         }
         .onChange(of: position) { _, newValue in
             if newValue == .island {
@@ -83,21 +83,22 @@ struct VPNIslandPanel: View {
     }
 
     @ViewBuilder
-    private func connectionStatsStrip(context: BottomPanelCurtainContext) -> some View {
+    private func connectionStatsStrip(
+        context: BottomPanelCurtainContext,
+        live: VPNSessionStatsSnapshot
+    ) -> some View {
         if connectionState == .connected {
             AnimatedPanelStatsReveal(context: context) { reveal in
                 ConnectionStatsRevealShell(revealProgress: reveal) {
                     ConnectionStatsStrip(
                         regionLabel: selectedLocation.name,
-                        pingMs: pingMs,
-                        downloadRate: downloadRate,
-                        uploadRate: uploadRate,
-                        usageFraction: usageFraction,
-                        sessionDataUsedText: sessionDataUsedText,
+                        pingMs: live.pingMs,
+                        downloadRate: live.downloadRate,
+                        uploadRate: live.uploadRate,
+                        usageFraction: live.usageFraction,
+                        sessionDataUsedText: live.dataUsedText,
                         usesContentPadding: false,
-                        progressTint: VelvetMotion.revealStep(reveal) > 0.45
-                            ? .primary
-                            : VelvetTheme.accent,
+                        progressTint: VelvetTheme.trafficProgressTint,
                         onTap: context.isStatsExpanded ? onShowConnectionInfo : nil
                     )
                 } details: {
@@ -244,10 +245,10 @@ struct VPNIslandPanel: View {
                                 .font(.caption2.weight(.bold))
                         }
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(VelvetTheme.accent)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(VelvetTheme.accent.opacity(0.14), in: Capsule())
+                        .background(Color(.tertiarySystemFill), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove filter: \(chip.title)")
@@ -375,7 +376,7 @@ struct VPNIslandPanel: View {
                 if selectedLocation.id == location.id {
                     Image(systemName: "checkmark")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(VelvetTheme.accent)
+                        .foregroundStyle(.primary)
                 } else {
                     Image(systemName: "cellularbars", variableValue: signalLevel(location.signal))
                         .font(.subheadline)

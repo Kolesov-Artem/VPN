@@ -40,7 +40,7 @@ enum VelvetMetrics {
     static let statsStripCollapsedInset: CGFloat = 8
     /// Padding inside the grouped stats card edge.
     static let statsStripExpandedCardPadding: CGFloat = 16
-    static let statsStripExpandedCardCornerRadius: CGFloat = 24
+    static let statsStripExpandedCardCornerRadius: CGFloat = groupedCornerRadius
     /// Padding inside each stats-card section (stats row + message block).
     static let statsStripSectionPadding: CGFloat = 4
     /// Space above and below the divider before provider info text.
@@ -49,15 +49,21 @@ enum VelvetMetrics {
     static let infoBlockSectionSpacing: CGFloat = 12
     /// Vertical inset around the info block — matches spacing between scroll sections.
     static let infoBlockTopSpacing: CGFloat = 16
-    /// Horizontal padding inside the providers summary card (Figma: 24pt).
-    static let providersCardHorizontalPadding: CGFloat = 24
+    /// Horizontal padding inside the providers summary card (align with list rows).
+    static let providersCardHorizontalPadding: CGFloat = 16
+    /// Vertical gap between scroll sections (providers / presets / locations).
+    static let panelScrollSectionSpacing: CGFloat = 20
+    /// Gap between a section title and its card content.
+    static let panelSectionHeaderSpacing: CGFloat = 8
     static let statsStripCornerRadius: CGFloat = 20
     /// Purple promo card outer shell — compact, aligned with content cards.
-    static let promoCardOuterRadius: CGFloat = contentSurfaceCornerRadius + 2
-    static let promoCardInnerRadius: CGFloat = contentSurfaceCornerRadius
+    static let promoCardOuterRadius: CGFloat = groupedCornerRadius + 2
+    static let promoCardInnerRadius: CGFloat = groupedCornerRadius
     static let promoCardFramePadding: CGFloat = 2
     static let promoCardFooterPadding: CGFloat = 12
     static let contentSurfaceCornerRadius: CGFloat = 20
+    /// Corner shared by grouped cards: the curtain's groups and inset lists.
+    static let groupedCornerRadius: CGFloat = 20
     /// Inset between a content-surface card edge and a nested block (e.g. stats strip).
     static let contentSurfaceInnerPadding: CGFloat = 8
 
@@ -74,7 +80,8 @@ enum VelvetMetrics {
     static let statsStripProgressCornerRadius: CGFloat = 3
     static let statsStripPingPlaceholder = "000 ms"
     static let statsStripRatePlaceholder = "000 MB/s"
-    /// Collapsed stats block: 8pt inset × 2 + usage/progress/grid content.
+    static let statsStripLocationPlaceholder = "Saint Petersburg"
+    /// Collapsed stats block: 8pt inset × 2 + one usage row + metrics grid.
     static let statsStripCollapsedHeight: CGFloat =
         statsStripCollapsedInset * 2 + statsStripSectionSpacing + 32 + 39
     /// Hairline between island header and stats.
@@ -108,6 +115,9 @@ enum VelvetMetrics {
     static let nestedDividerInset: CGFloat = 58
     static let panelHeaderIconSlot: CGFloat = 44
     static let favouritePlaceholderSize: CGFloat = 44
+    /// One line of flag chips below the collapsed island, with room so the capsules are not clipped.
+    static let favouriteStripHeight: CGFloat = islandChromeButtonSize + 4
+    static let favouriteStripSpacing: CGFloat = 8
 }
 
 // MARK: - Shared chrome
@@ -138,11 +148,11 @@ struct VelvetFilterChip: View {
                     .font(.caption2.weight(.bold))
             }
             .font(VelvetTypography.chipLabel)
-            .foregroundStyle(VelvetTheme.accent)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(minHeight: VelvetMetrics.minTouchTarget)
-            .background(VelvetTheme.accent.opacity(VelvetTheme.selectionHighlightOpacity), in: Capsule())
+            .background(Color(.tertiarySystemFill), in: Capsule())
         }
         .buttonStyle(PressScaleButtonStyle())
         .accessibilityLabel("Remove filter: \(title)")
@@ -184,7 +194,7 @@ extension View {
 
 enum VelvetCollapsedIslandLayout {
     /// Top chrome: grip, status header, and optional stats strip.
-    static func chromeHeight(showsSessionStats: Bool) -> CGFloat {
+    static func chromeHeight(showsSessionStats: Bool, showsFavouriteStrip _: Bool = false) -> CGFloat {
         let headerBlock = BottomPanelDetents.expandedGripBandHeight
             + VelvetMetrics.islandHeaderBlockHeight
         guard showsSessionStats else { return headerBlock }
@@ -194,11 +204,17 @@ enum VelvetCollapsedIslandLayout {
     }
 
     /// Total floating card height at the island detent.
-    static func islandHeight(showsSessionStats: Bool, isAccessibilitySize: Bool) -> CGFloat {
+    static func islandHeight(
+        showsSessionStats: Bool,
+        isAccessibilitySize: Bool,
+        showsFavouriteStrip _: Bool = false
+    ) -> CGFloat {
         let body = VelvetMetrics.collapsedSectionSpacing
             + VelvetMetrics.primaryButtonHeight
             + VelvetMetrics.collapsedBottomPadding
-        let height = chromeHeight(showsSessionStats: showsSessionStats) + body
+        let height = chromeHeight(
+            showsSessionStats: showsSessionStats
+        ) + body
         return isAccessibilitySize ? height + 56 : height
     }
 }

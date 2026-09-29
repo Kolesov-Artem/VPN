@@ -17,7 +17,7 @@ struct BottomPanelCurtainContext {
 }
 
 /// Unified bottom panel shell: grip resize, fixed chrome, coordinated scroll, footer slot.
-struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent: View, SearchDock: View>: View {
+struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent: View, SearchDock: View, FavouriteDock: View>: View {
     @Binding var position: BottomPanelPosition
     @Binding var isPanelInteracting: Bool
 
@@ -26,6 +26,10 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     let safeAreaTop: CGFloat
     var compactBarTitle: String = "Velvet VPN"
     var detentMode: VPNPanelDetentMode = .stepped
+    /// Grows the collapsed island by one quiet row when saved places exist.
+    var showsFavouriteStrip: Bool = false
+    /// When false, rows fade themselves. A single opacity on the whole list would hide that sequence.
+    var fadesScrollContentAsGroup: Bool = true
     var onDismissSearch: (() -> Void)?
 
     @ViewBuilder let header: (BottomPanelCurtainContext) -> Header
@@ -33,6 +37,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     @ViewBuilder let footer: () -> Footer
     @ViewBuilder let scrollContent: (BottomPanelCurtainContext) -> ScrollContent
     @ViewBuilder let searchDock: () -> SearchDock
+    @ViewBuilder let favouriteDock: () -> FavouriteDock
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -42,8 +47,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     @State private var isDraggingPanel = false
     @State private var isPositionAnimating = false
     @State private var positionAnimationTask: Task<Void, Never>?
-    @State private var isScrollAtTop = true
-    @State private var scrollEdgeProgress: CGFloat = 0
+    @State private var scrollChrome = PanelScrollChromeModel()
     @State private var scrollResetToken = UUID()
     @State private var panelScrollViewHandle = PanelScrollViewHandle()
 
@@ -54,7 +58,8 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize,
-                showsSessionStats: showsSessionStats
+                showsSessionStats: showsSessionStats,
+                showsFavouriteStrip: showsFavouriteStrip
             )
             let layout = BottomPanelInterpolator.displayLayout(
                 detents: detents,
@@ -98,12 +103,14 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             VelvetMotion.connectionLayout(reduceMotion: reduceMotion),
             value: showsSessionStats
         )
+        .animation(
+            VelvetMotion.connectionLayout(reduceMotion: reduceMotion),
+            value: showsFavouriteStrip
+        )
         .sensoryFeedback(.selection, trigger: position)
         .onChange(of: position) { _, newValue in
             if newValue != .expanded {
-                scrollEdgeProgress = 0
-            }
-            if newValue != .expanded {
+                scrollChrome.reset()
                 scrollResetToken = UUID()
             }
         }
@@ -118,7 +125,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             detents: detents,
             position: position,
             isDraggingPanel: isDraggingPanel,
-            scrollEdgeProgress: scrollEdgeProgress,
+            scrollEdgeProgress: 0,
             collapseExpanded: collapseExpandedPanel,
             togglePosition: togglePosition
         )
@@ -146,58 +153,75 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
         let listAcceptsTaps = position != .island && !isDraggingPanel
         let showsCompactBar = position == .expanded
 
-        return VStack(spacing: 0) {
-            gripBand()
+        let favouriteVisibility = showsFavouriteStrip
+            ? max(1 - layout.revealProgress, 0)
+            : 0
 
-            expandedScrollRegion(
-                detents: detents,
-                context: context,
-                scrollBottomInset: scrollBottomInset,
-                listOpacity: listOpacity,
-                listAcceptsTaps: listAcceptsTaps
+        return VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                gripBand()
+
+                expandedScrollRegion(
+                    detents: detents,
+                    context: context,
+                    scrollBottomInset: scrollBottomInset,
+                    listOpacity: listOpacity,
+                    listAcceptsTaps: listAcceptsTaps
+                )
+
+                if footerOpacity > 0.01 {
+                    footer()
+                        .padding(
+                            .horizontal,
+                            position == .island
+                                ? VelvetMetrics.islandContentPadding
+                                : VelvetMetrics.rowHorizontalPadding
+                        )
+                        .padding(.top, position == .island ? VelvetMetrics.collapsedSectionSpacing : 0)
+                        .padding(.bottom, VelvetMetrics.collapsedBottomPadding)
+                        .opacity(footerOpacity)
+                        .allowsHitTesting(footerOpacity > 0.5 && !isDraggingPanel)
+                }
+            }
+            .simultaneousGesture(
+                position == .island ? gripDragGesture(detents: detents) : nil
+            )
+            .frame(height: layout.panelHeight, alignment: .top)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .top) {
+                if showsCompactBar {
+                    PanelCompactBarChrome(
+                        title: compactBarTitle,
+                        chrome: scrollChrome,
+                        onCollapse: collapseExpandedPanel,
+                        allowsHitTesting: !isDraggingPanel
+                    )
+                }
+            }
+            .overlay(alignment: .bottom) {
+                searchDockRegion(revealProgress: listRevealProgress(layout: layout))
+            }
+            .background {
+                panelShapedBackground(shape: shape)
+            }
+            .clipShape(shape)
+            .shadow(
+                color: .black.opacity(layout.shadowOpacity),
+                radius: layout.shadowRadius,
+                y: layout.shadowY
             )
 
-            if footerOpacity > 0.01 {
-                footer()
-                    .padding(
-                        .horizontal,
-                        position == .island
-                            ? VelvetMetrics.islandContentPadding
-                            : VelvetMetrics.rowHorizontalPadding
-                    )
-                    .padding(.top, position == .island ? VelvetMetrics.collapsedSectionSpacing : 0)
-                    .padding(.bottom, VelvetMetrics.collapsedBottomPadding)
-                    .opacity(footerOpacity)
-                    .allowsHitTesting(footerOpacity > 0.5 && !isDraggingPanel)
-            }
-        }
-        .simultaneousGesture(
-            position == .island ? gripDragGesture(detents: detents) : nil
-        )
-        .frame(height: layout.panelHeight, alignment: .top)
-        .frame(maxWidth: .infinity)
-        .overlay(alignment: .top) {
-            if showsCompactBar {
-                PanelCompactBarChrome(
-                    title: compactBarTitle,
-                    scrollEdgeProgress: scrollEdgeProgress,
-                    onCollapse: collapseExpandedPanel,
-                    allowsHitTesting: !isDraggingPanel
+            favouriteDock()
+                .frame(
+                    height: VelvetMetrics.favouriteStripHeight * favouriteVisibility,
+                    alignment: .top
                 )
-            }
+                .clipped()
+                .padding(.top, VelvetMetrics.favouriteStripSpacing * favouriteVisibility)
+                .opacity(favouriteVisibility)
+                .allowsHitTesting(favouriteVisibility > 0.5 && !isDraggingPanel)
+                .accessibilityHidden(favouriteVisibility < 0.5)
         }
-        .overlay(alignment: .bottom) {
-            searchDockRegion(revealProgress: listRevealProgress(layout: layout))
-        }
-        .background {
-            panelShapedBackground(shape: shape)
-        }
-        .clipShape(shape)
-        .shadow(
-            color: .black.opacity(layout.shadowOpacity),
-            radius: layout.shadowRadius,
-            y: layout.shadowY
-        )
         .padding(.top, expandedTopInset * layout.sheetMorphProgress)
         .padding(.horizontal, layout.horizontalInset)
         .padding(.bottom, layout.bottomInset)
@@ -238,8 +262,11 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 minHeight: detents.islandHeight,
                 maxHeight: detents.expandedHeight
             ),
-            isScrollAtTop: $isScrollAtTop,
-            scrollEdgeProgress: $scrollEdgeProgress,
+            isDraggingPanel: isDraggingPanel,
+            hostedContentRevision: isDraggingPanel
+                ? Int((context.layout.revealProgress * 8).rounded())
+                : 0,
+            scrollChrome: scrollChrome,
             onPanelDragChanged: { translation in
                 beginPanelDragIfNeeded()
                 dragTranslation = translation
@@ -263,7 +290,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
                     header(context)
-                        .allowsHitTesting(!isDraggingPanel && scrollEdgeProgress < 0.5)
+                        .allowsHitTesting(!isDraggingPanel)
 
                     stats(context)
                         .padding(
@@ -279,8 +306,10 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
 
                 if listOpacity > 0.01 {
                     scrollContent(context)
-                        .opacity(listOpacity)
+                        .opacity(fadesScrollContentAsGroup ? listOpacity : 1)
                         .allowsHitTesting(listAcceptsTaps)
+                        .animation(nil, value: showsSessionStats)
+                        .animation(nil, value: showsFavouriteStrip)
                 }
             }
         }
@@ -318,7 +347,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     private func panelShapedBackground<S: Shape>(shape: S) -> some View {
         ZStack {
             shape.fill(Color(.systemBackground))
-            if !reduceTransparency {
+            if !reduceTransparency, !isDraggingPanel, !isPositionAnimating {
                 shape.fill(.ultraThickMaterial)
             }
         }

@@ -31,14 +31,20 @@ final class VPNProviderStore {
     private static let importedKeysKey = "velvet.importedProviderKeys"
     private static let providerSnapshotsKey = "velvet.providerSnapshots.v2"
     private static let providerScopeKey = "velvet.providerScope.v1"
+    private static let activeProviderKey = "velvet.activeProvider.v1"
     private static let prototypeCycleKey = "velvet.prototypeOnboardingCycle"
+    private static let switcherHiddenKey = "velvet.switcherHiddenProviderIDs"
     private static let thirdPartyDemoTemplateIndex = 2
 
     var providers: [VPNProvider] = []
     var highlightedProviderID: UUID?
     var isRefreshing = false
     var providerScope: VPNProviderScope = .allNetworks
+    var activeProviderID: UUID?
     var hiddenRenewalBannerIDs: Set<UUID> = []
+    /// Active subscriptions the person hid from the switch card. They stay on the subscriptions page.
+    var switcherHiddenIDs: Set<UUID> = []
+    private var catalogScopeWasPersisted = false
 
     /// State 2 demo: first connect should surface mismatch UX instead of silent Smart Auto fallback.
     var importedOnlyDemoAwaitingMismatch = false
@@ -53,6 +59,34 @@ final class VPNProviderStore {
 
     var showsProviderPicker: Bool { providers.count > 1 }
 
+    /// Subscriptions offered in the switch card: active, and not hidden by a swipe.
+    var switcherProviders: [VPNProvider] {
+        providers.filter { $0.status.isActive && !switcherHiddenIDs.contains($0.id) }
+    }
+
+    func isInSwitcher(_ id: UUID) -> Bool {
+        guard let provider = provider(id: id), provider.status.isActive else { return false }
+        return !switcherHiddenIDs.contains(id)
+    }
+
+    /// Removes a subscription from the switch card. It stays in the full subscriptions list.
+    func hideFromSwitcher(_ id: UUID) {
+        switcherHiddenIDs.insert(id)
+        persistSwitcherHiddenIDs()
+        guard !showsAllSubscriptionsCatalog, activeProviderID == id else { return }
+        if let next = switcherProviders.first {
+            setActiveProvider(id: next.id)
+        } else {
+            showAllSubscriptions()
+        }
+    }
+
+    /// Puts a subscription back in the switch card.
+    func showInSwitcher(_ id: UUID) {
+        switcherHiddenIDs.remove(id)
+        persistSwitcherHiddenIDs()
+    }
+
     var soleProvider: VPNProvider? {
         guard providers.count == 1 else { return nil }
         return providers.first
@@ -62,14 +96,49 @@ final class VPNProviderStore {
     private var nextImportIndex = 1
 
     init() {
+        loadActiveProviderID()
         loadProviderScope()
+        loadSwitcherHiddenIDs()
         if UserDefaults.standard.bool(forKey: Self.onboardingKey) {
             loadPersistedProviders()
         }
+        reconcileActiveProvider()
+    }
+
+    var activeProvider: VPNProvider {
+        if let activeProviderID,
+           let match = providers.first(where: { $0.id == activeProviderID }) {
+            return match
+        }
+        return providers.first ?? VPNProvider.samples[0]
+    }
+
+    func setActiveProvider(id: UUID, updatesCatalog: Bool = true) {
+        guard providers.contains(where: { $0.id == id }) else { return }
+        activeProviderID = id
+        persistActiveProviderID()
+        if updatesCatalog {
+            setProviderScope(.provider(id))
+        }
+        VPNLogsStore.shared.append("Active VPN: \(providerName(id: id) ?? "Unknown")")
+    }
+
+    func showAllSubscriptions() {
+        setProviderScope(.allNetworks)
+        VPNLogsStore.shared.append("Active subscription: all")
+    }
+
+    var showsAllSubscriptionsCatalog: Bool {
+        if case .allNetworks = providerScope { return true }
+        return false
     }
 
     func setProviderScope(_ scope: VPNProviderScope) {
         providerScope = scope
+        if case let .provider(id) = scope {
+            activeProviderID = id
+            persistActiveProviderID()
+        }
         persistProviderScope()
     }
 
@@ -88,7 +157,11 @@ final class VPNProviderStore {
     }
 
     func resetProviderScope() {
-        setProviderScope(.allNetworks)
+        if VPNReleaseProfile.isRelease1 {
+            reconcileActiveProvider()
+        } else {
+            setProviderScope(.allNetworks)
+        }
     }
 
     var hasCompletedOnboarding: Bool {
@@ -232,11 +305,14 @@ final class VPNProviderStore {
         UserDefaults.standard.removeObject(forKey: Self.providerSnapshotsKey)
         UserDefaults.standard.removeObject(forKey: Self.providerScopeKey)
         UserDefaults.standard.removeObject(forKey: Self.activeScenarioKey)
+        UserDefaults.standard.removeObject(forKey: Self.switcherHiddenKey)
         hiddenRenewalBannerIDs.removeAll()
+        switcherHiddenIDs.removeAll()
         providers = []
         nextImportIndex = 1
         highlightedProviderID = nil
         providerScope = .allNetworks
+        catalogScopeWasPersisted = false
     }
 
     func applyPrototypeScenario(_ scenario: VPNPrototypeScenario) {
@@ -258,15 +334,52 @@ final class VPNProviderStore {
             resetProviderScope()
 
         case .velvetPlusImported:
-            var velvet = VPNProvider.samples[0]
-            let template = VPNProvider.samples[Self.thirdPartyDemoTemplateIndex]
-            let imported = makeImportedProvider(from: template, templateIndex: Self.thirdPartyDemoTemplateIndex)
-            providers = [velvet, imported]
-            nextImportIndex = Self.thirdPartyDemoTemplateIndex + 1
+            let velvet = makeFeaturedProvider(
+                name: "🚀 Velvet VPN — #34903",
+                status: .active(locationCount: 903, trafficRemaining: "120 GB left"),
+                servers: VPNProvider.velvetHappServers,
+                providerMessage: VPNFigmaSection550Copy.velvetProviderMessage
+            )
+
+            let velvetTwo = makeImportedProvider(
+                from: VPNProvider.samples[0],
+                templateIndex: 1,
+                name: "Velvet #4309-23-4534-Discount",
+                iconSymbol: "shield.lefthalf.filled",
+                status: .active(locationCount: 903, trafficRemaining: "64 GB left"),
+                servers: Self.bangkokServers
+            )
+            let velvetThree = makeImportedProvider(
+                from: VPNProvider.samples[0],
+                templateIndex: 2,
+                name: "Velvet #43-23-4534-Discount",
+                iconSymbol: "shield.lefthalf.filled",
+                status: .active(locationCount: 903, trafficRemaining: "18 GB left"),
+                servers: Self.berlinServers
+            )
+            let vpnName = makeImportedProvider(
+                from: VPNProvider.samples[2],
+                templateIndex: 3,
+                name: "VPN name",
+                iconSymbol: "antenna.radiowaves.left.and.right",
+                status: .active(locationCount: 903, trafficRemaining: "240 GB left"),
+                servers: Self.londonServers
+            )
+            let vpnNameExpired = makeImportedProvider(
+                from: VPNProvider.samples[2],
+                templateIndex: 4,
+                name: "VPN name",
+                iconSymbol: "v.circle.fill",
+                status: .expired
+            )
+
+            providers = [velvet, velvetTwo, velvetThree, vpnName, vpnNameExpired]
+            nextImportIndex = 5
             highlightedProviderID = nil
+            setActiveProvider(id: velvet.id)
             UserDefaults.standard.set(true, forKey: Self.onboardingKey)
             UserDefaults.standard.set(
-                ["import-\(Self.thirdPartyDemoTemplateIndex)-1"],
+                ["import-1-1", "import-1-2", "import-2-1", "import-2-2"],
                 forKey: Self.importedKeysKey
             )
             persistSnapshots()
@@ -299,22 +412,145 @@ final class VPNProviderStore {
         VPNLogsStore.shared.append("Prototype scenario: \(scenario.title)")
     }
 
-    private func makeImportedProvider(from template: VPNProvider, templateIndex: Int) -> VPNProvider {
-        VPNProvider(
+    private func makeImportedProvider(
+        from template: VPNProvider,
+        templateIndex: Int,
+        name: String? = nil,
+        iconSymbol: String? = nil,
+        status: VPNProvider.Status? = nil,
+        servers: [VPNLocation]? = nil
+    ) -> VPNProvider {
+        let resolvedStatus = status ?? template.status
+        _ = templateIndex
+        return VPNProvider(
             id: UUID(),
-            name: template.name,
-            iconSymbol: template.iconSymbol,
+            name: name ?? template.name,
+            iconSymbol: iconSymbol ?? template.iconSymbol,
             kind: .imported,
-            status: template.status,
-            servers: template.servers,
+            status: resolvedStatus,
+            servers: servers ?? template.servers,
             subscriptionURL: template.subscriptionURL ?? "https://provider.example/sub/demo",
             lastUpdated: .now,
-            expiresAt: template.expiresAt,
-            includedInSmartAuto: true,
-            providerMessage: template.providerMessage,
-            providerMessageUpdatedAt: .now
+            expiresAt: resolvedStatus == .expired ? template.expiresAt : template.expiresAt,
+            includedInSmartAuto: resolvedStatus.isActive,
+            providerMessage: nil,
+            providerMessageUpdatedAt: nil
         )
     }
+
+    private func makeFeaturedProvider(
+        name: String,
+        status: VPNProvider.Status,
+        servers: [VPNLocation],
+        providerMessage: String? = nil
+    ) -> VPNProvider {
+        let template = VPNProvider.samples[0]
+        return VPNProvider(
+            id: template.id,
+            name: name,
+            iconSymbol: template.iconSymbol,
+            kind: .velvetFeatured,
+            status: status,
+            servers: servers,
+            subscriptionURL: template.subscriptionURL,
+            lastUpdated: template.lastUpdated,
+            expiresAt: template.expiresAt,
+            includedInSmartAuto: true,
+            providerMessage: providerMessage,
+            providerMessageUpdatedAt: providerMessage == nil ? nil : .now
+        )
+    }
+
+    private static func place(
+        _ name: String,
+        _ city: String,
+        _ flag: String,
+        _ ping: Int,
+        _ latitude: Double,
+        _ longitude: Double,
+        kind: VPNLocation.Kind = .standard
+    ) -> VPNLocation {
+        VPNLocation(
+            name: name,
+            city: city,
+            flag: flag,
+            kind: kind,
+            ping: ping,
+            coordinate: GeoCoordinate(latitude: latitude, longitude: longitude)
+        )
+    }
+
+    private static let moscowServers: [VPNLocation] = [
+        place("Russia", "Moscow", "🇷🇺", 13, 55.7558, 37.6173, kind: .lte),
+        place("Russia", "Saint Petersburg", "🇷🇺", 26, 59.9311, 30.3609),
+        place("Russia", "Kazan", "🇷🇺", 34, 55.8304, 49.0661),
+        place("Kazakhstan", "Almaty", "🇰🇿", 42, 43.2220, 76.8512),
+        place("Armenia", "Yerevan", "🇦🇲", 48, 40.1792, 44.4991),
+        place("Georgia", "Tbilisi", "🇬🇪", 52, 41.7151, 44.8271),
+        place("Turkey", "Istanbul", "🇹🇷", 58, 41.0082, 28.9784),
+        place("Finland", "Helsinki", "🇫🇮", 64, 60.1699, 24.9384),
+        place("Sweden", "Stockholm", "🇸🇪", 69, 59.3293, 18.0686),
+        place("Poland", "Warsaw", "🇵🇱", 58, 52.2297, 21.0122),
+        place("Germany", "Frankfurt", "🇩🇪", 74, 50.1109, 8.6821),
+        place("Netherlands", "Amsterdam", "🇳🇱", 78, 52.3676, 4.9041),
+        place("France", "Paris", "🇫🇷", 88, 48.8566, 2.3522),
+        place("United Kingdom", "London", "🇬🇧", 94, 51.5072, -0.1276),
+        place("United States", "New York", "🇺🇸", 128, 40.7128, -74.0060),
+    ]
+
+    private static let bangkokServers: [VPNLocation] = [
+        place("Thailand", "Bangkok", "🇹🇭", 29, 13.7563, 100.5018, kind: .lte),
+        place("Thailand", "Phuket", "🇹🇭", 41, 7.8804, 98.3923),
+        place("Vietnam", "Ho Chi Minh City", "🇻🇳", 54, 10.8231, 106.6297),
+        place("Cambodia", "Phnom Penh", "🇰🇭", 57, 11.5564, 104.9282),
+        place("Malaysia", "Kuala Lumpur", "🇲🇾", 61, 3.1390, 101.6869),
+        place("Singapore", "Singapore", "🇸🇬", 62, 1.3521, 103.8198),
+        place("Indonesia", "Jakarta", "🇮🇩", 70, -6.2088, 106.8456),
+        place("Philippines", "Manila", "🇵🇭", 76, 14.5995, 120.9842),
+        place("Hong Kong", "Hong Kong", "🇭🇰", 80, 22.3193, 114.1694),
+        place("Taiwan", "Taipei", "🇹🇼", 84, 25.0330, 121.5654),
+        place("Japan", "Tokyo", "🇯🇵", 88, 35.6762, 139.6503),
+        place("South Korea", "Seoul", "🇰🇷", 91, 37.5665, 126.9780),
+        place("Australia", "Sydney", "🇦🇺", 118, -33.8688, 151.2093),
+        place("India", "Mumbai", "🇮🇳", 96, 19.0760, 72.8777),
+        place("China", "Shanghai", "🇨🇳", 92, 31.2304, 121.4737),
+    ]
+
+    private static let berlinServers: [VPNLocation] = [
+        place("Germany", "Berlin", "🇩🇪", 48, 52.5200, 13.4050, kind: .lte),
+        place("Germany", "Munich", "🇩🇪", 55, 48.1351, 11.5820),
+        place("Germany", "Frankfurt", "🇩🇪", 51, 50.1109, 8.6821),
+        place("Austria", "Vienna", "🇦🇹", 46, 48.2082, 16.3738),
+        place("Czech Republic", "Prague", "🇨🇿", 44, 50.0755, 14.4378),
+        place("Poland", "Warsaw", "🇵🇱", 52, 52.2297, 21.0122),
+        place("Hungary", "Budapest", "🇭🇺", 58, 47.4979, 19.0402),
+        place("Switzerland", "Zurich", "🇨🇭", 62, 47.3769, 8.5417),
+        place("France", "Paris", "🇫🇷", 71, 48.8566, 2.3522),
+        place("Belgium", "Brussels", "🇧🇪", 68, 50.8503, 4.3517),
+        place("Netherlands", "Amsterdam", "🇳🇱", 66, 52.3676, 4.9041),
+        place("Denmark", "Copenhagen", "🇩🇰", 63, 55.6761, 12.5683),
+        place("Italy", "Rome", "🇮🇹", 79, 41.9028, 12.4964),
+        place("Spain", "Madrid", "🇪🇸", 84, 40.4168, -3.7038),
+        place("Portugal", "Lisbon", "🇵🇹", 90, 38.7223, -9.1393),
+    ]
+
+    private static let londonServers: [VPNLocation] = [
+        place("United Kingdom", "London", "🇬🇧", 94, 51.5072, -0.1276, kind: .lte),
+        place("United Kingdom", "Manchester", "🇬🇧", 101, 53.4808, -2.2426),
+        place("Ireland", "Dublin", "🇮🇪", 98, 53.3498, -6.2603),
+        place("France", "Paris", "🇫🇷", 88, 48.8566, 2.3522),
+        place("Netherlands", "Amsterdam", "🇳🇱", 78, 52.3676, 4.9041),
+        place("Germany", "Frankfurt", "🇩🇪", 82, 50.1109, 8.6821),
+        place("Spain", "Madrid", "🇪🇸", 96, 40.4168, -3.7038),
+        place("United States", "New York", "🇺🇸", 128, 40.7128, -74.0060),
+        place("United States", "Los Angeles", "🇺🇸", 156, 34.0522, -118.2437),
+        place("Canada", "Toronto", "🇨🇦", 134, 43.6532, -79.3832),
+        place("Brazil", "São Paulo", "🇧🇷", 188, -23.5558, -46.6396),
+        place("Mexico", "Mexico City", "🇲🇽", 162, 19.4326, -99.1332),
+        place("United Arab Emirates", "Dubai", "🇦🇪", 142, 25.2048, 55.2708),
+        place("South Africa", "Johannesburg", "🇿🇦", 176, -26.2041, 28.0473),
+        place("Japan", "Tokyo", "🇯🇵", 210, 35.6762, 139.6503),
+    ]
 #endif
 
     func importFromURL(_ urlString: String) -> Result<VPNProvider, VPNImportError> {
@@ -364,6 +600,11 @@ final class VPNProviderStore {
         persistImportedKey(importKey)
         persistSnapshots()
         highlight(imported.id)
+        if VPNReleaseProfile.isRelease1 {
+            reconcileActiveProvider()
+        } else {
+            setActiveProvider(id: imported.id)
+        }
         VPNLogsStore.shared.append("Imported \(imported.name)")
 
         return .success(imported)
@@ -380,6 +621,7 @@ final class VPNProviderStore {
         if highlightedProviderID == id {
             highlightedProviderID = nil
         }
+        reconcileActiveProvider()
         VPNLogsStore.shared.append("Removed \(provider.name)")
     }
 
@@ -404,6 +646,25 @@ final class VPNProviderStore {
 
     func updateSubscriptionURL(id: UUID, url: String?) {
         update(id: id) { $0.subscriptionURL = url }
+    }
+
+    /// Prototype purchase: adds a block of traffic. An expired subscription becomes active again.
+    func purchaseTraffic(id: UUID) {
+        update(id: id) { provider in
+            switch provider.status {
+            case let .active(count, _):
+                provider.status = .active(locationCount: count, trafficRemaining: "500 GB left")
+            case .expired:
+                provider.status = .active(
+                    locationCount: max(provider.servers.count, 1),
+                    trafficRemaining: "100 GB left"
+                )
+                provider.expiresAt = Calendar.current.date(byAdding: .day, value: 30, to: .now)
+                provider.includedInSmartAuto = true
+            }
+            provider.lastUpdated = .now
+        }
+        VPNLogsStore.shared.append("Bought traffic for \(providerName(id: id) ?? "subscription")")
     }
 
     func renewSubscription(id: UUID) {
@@ -523,25 +784,44 @@ final class VPNProviderStore {
         let id: UUID
     }
 
+    private enum PersistedCatalogScope: Codable {
+        case allNetworks
+        case provider(UUID)
+    }
+
     private func loadProviderScope() {
-        guard
-            let data = UserDefaults.standard.data(forKey: Self.providerScopeKey),
-            let scoped = try? JSONDecoder().decode(ScopedProviderID.self, from: data)
-        else {
+        guard let data = UserDefaults.standard.data(forKey: Self.providerScopeKey) else {
             providerScope = .allNetworks
+            catalogScopeWasPersisted = false
             return
         }
-        providerScope = .provider(scoped.id)
+        if let persisted = try? JSONDecoder().decode(PersistedCatalogScope.self, from: data) {
+            catalogScopeWasPersisted = true
+            switch persisted {
+            case .allNetworks:
+                providerScope = .allNetworks
+            case let .provider(id):
+                providerScope = .provider(id)
+            }
+            return
+        }
+        if let scoped = try? JSONDecoder().decode(ScopedProviderID.self, from: data) {
+            catalogScopeWasPersisted = true
+            providerScope = .provider(scoped.id)
+            return
+        }
+        providerScope = .allNetworks
+        catalogScopeWasPersisted = false
     }
 
     private func persistProviderScope() {
-        switch providerScope {
-        case .allNetworks:
-            UserDefaults.standard.removeObject(forKey: Self.providerScopeKey)
-        case let .provider(id):
-            guard let data = try? JSONEncoder().encode(ScopedProviderID(id: id)) else { return }
-            UserDefaults.standard.set(data, forKey: Self.providerScopeKey)
+        catalogScopeWasPersisted = true
+        let persisted: PersistedCatalogScope = switch providerScope {
+        case .allNetworks: .allNetworks
+        case let .provider(id): .provider(id)
         }
+        guard let data = try? JSONEncoder().encode(persisted) else { return }
+        UserDefaults.standard.set(data, forKey: Self.providerScopeKey)
     }
 
     private struct ProviderSnapshot: Codable {
@@ -588,15 +868,80 @@ final class VPNProviderStore {
             providers[index].lastUpdated = snapshot.lastUpdated
             providers[index].expiresAt = snapshot.expiresAt
             providers[index].includedInSmartAuto = snapshot.includedInSmartAuto
-            providers[index].providerMessage = snapshot.providerMessage
+            providers[index].providerMessage = snapshot.providerMessage.map {
+                VPNProvider.strippingIdentityFooter(from: $0)
+            }
             providers[index].providerMessageUpdatedAt = snapshot.providerMessageUpdatedAt
         }
 
         if case let .provider(id) = providerScope,
            !providers.contains(where: { $0.id == id }) {
-            providerScope = .allNetworks
-            persistProviderScope()
+            if VPNReleaseProfile.isRelease1 {
+                reconcileActiveProvider()
+            } else {
+                providerScope = .allNetworks
+                persistProviderScope()
+            }
+        } else {
+            reconcileActiveProvider()
         }
+    }
+
+    func reconcileActiveProvider() {
+        guard VPNReleaseProfile.isRelease1 else { return }
+
+        let validActiveID = resolvedActiveProviderID()
+        if validActiveID != activeProviderID {
+            activeProviderID = validActiveID
+            persistActiveProviderID()
+        }
+
+        switch providerScope {
+        case .allNetworks:
+            if !catalogScopeWasPersisted, let validActiveID {
+                providerScope = .provider(validActiveID)
+                persistProviderScope()
+            }
+        case let .provider(id):
+            if !providers.contains(where: { $0.id == id }), let validActiveID {
+                providerScope = .provider(validActiveID)
+                persistProviderScope()
+            }
+        }
+    }
+
+    private func resolvedActiveProviderID() -> UUID? {
+        if let activeProviderID, providers.contains(where: { $0.id == activeProviderID }) {
+            return activeProviderID
+        }
+        return providers.first(where: { $0.kind == .velvetFeatured && $0.status.isActive })?.id
+            ?? providers.first(where: \.isEligibleForAutoConnect)?.id
+            ?? providers.first?.id
+    }
+
+    private func loadActiveProviderID() {
+        guard
+            let raw = UserDefaults.standard.string(forKey: Self.activeProviderKey),
+            let id = UUID(uuidString: raw)
+        else { return }
+        activeProviderID = id
+    }
+
+    private func loadSwitcherHiddenIDs() {
+        let raw = UserDefaults.standard.stringArray(forKey: Self.switcherHiddenKey) ?? []
+        switcherHiddenIDs = Set(raw.compactMap(UUID.init(uuidString:)))
+    }
+
+    private func persistSwitcherHiddenIDs() {
+        UserDefaults.standard.set(switcherHiddenIDs.map(\.uuidString), forKey: Self.switcherHiddenKey)
+    }
+
+    private func persistActiveProviderID() {
+        guard let activeProviderID else {
+            UserDefaults.standard.removeObject(forKey: Self.activeProviderKey)
+            return
+        }
+        UserDefaults.standard.set(activeProviderID.uuidString, forKey: Self.activeProviderKey)
     }
 
     private func persistImportedKey(_ key: String) {

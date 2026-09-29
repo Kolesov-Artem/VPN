@@ -33,7 +33,7 @@ enum VPNPrototypeScenario: String, CaseIterable, Identifiable, Codable {
         case .velvetOnly:
             "Presets on · no Velvet ads"
         case .velvetPlusImported:
-            "Presets on · no promo shells"
+            "Active subscription switches the VPN · All subscriptions shows every location"
         case .velvetExpired:
             "Velvet renewal card · no purple frame"
         case .importedExpired:

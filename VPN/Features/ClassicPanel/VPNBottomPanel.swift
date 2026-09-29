@@ -297,10 +297,10 @@ struct VPNBottomPanel: View {
                                 .font(.caption2.weight(.bold))
                         }
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(VelvetTheme.accent)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(VelvetTheme.accent.opacity(0.14), in: Capsule())
+                        .background(Color(.tertiarySystemFill), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove filter: \(chip.title)")
@@ -622,7 +622,7 @@ struct VPNBottomPanel: View {
         if selectedLocation.id == location.id {
             Image(systemName: "checkmark")
                 .font(.subheadline.weight(.bold))
-                .foregroundStyle(VelvetTheme.accent)
+                .foregroundStyle(.primary)
                 .frame(width: 24, height: 24)
         } else {
             Image(systemName: "cellularbars", variableValue: signalLevel(location.signal))

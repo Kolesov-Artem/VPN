@@ -3,22 +3,21 @@ import SwiftUI
 /// Compact title row with Telegram bar blur flush to the top edge.
 struct PanelCompactBarChrome: View {
     var title: String = "Velvet VPN"
-    let scrollEdgeProgress: CGFloat
+    var chrome: PanelScrollChromeModel
     let onCollapse: () -> Void
     var allowsHitTesting: Bool = true
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
+        let scrollEdgeProgress = chrome.edgeProgress
         Color.clear
             .frame(height: VelvetMetrics.panelScrollChromeHeight)
             .allowsHitTesting(false)
             .background(alignment: .top) {
-                if scrollEdgeProgress > 0.01 {
-                    scrollEdgeBackground
-                        .frame(height: VelvetMetrics.panelScrollChromeBlurHeight)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                }
+                scrollEdgeBackground
+                    .frame(height: VelvetMetrics.panelScrollChromeBlurHeight)
+                    .frame(maxWidth: .infinity, alignment: .top)
             }
             .overlay(alignment: .top) {
                 ExpandedSheetCompactBar(
@@ -33,6 +32,7 @@ struct PanelCompactBarChrome: View {
 
     @ViewBuilder
     private var scrollEdgeBackground: some View {
+        let scrollEdgeProgress = chrome.edgeProgress
         if reduceTransparency {
             Color(.systemBackground)
                 .opacity(scrollEdgeProgress)

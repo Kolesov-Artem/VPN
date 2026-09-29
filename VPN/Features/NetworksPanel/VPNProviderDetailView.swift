@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct VPNProviderDetailView: View {
     @Bindable var providerStore: VPNProviderStore
@@ -30,16 +31,29 @@ struct VPNProviderDetailView: View {
         providerStore.providerScope.isScoped(to: providerID)
     }
 
+    private var providerSettingsNavigationTitle: String {
+        guard let provider else { return "Provider" }
+        if VPNReleaseProfile.isRelease1 {
+            return "\(provider.name) settings"
+        }
+        return provider.name
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if let provider {
-                    detailForm(provider)
+                    if VPNReleaseProfile.isRelease1 {
+                        release1DetailForm(provider)
+                    } else {
+                        legacyDetailForm(provider)
+                    }
                 } else {
                     ContentUnavailableView("Provider not found", systemImage: "exclamationmark.triangle")
                 }
             }
-            .navigationTitle(provider?.name ?? "Provider")
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(providerSettingsNavigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -63,7 +77,7 @@ struct VPNProviderDetailView: View {
                     .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showsProviderMessage) {
-                if let provider, let message = provider.providerMessage {
+                if let provider, let message = provider.displayedProviderMessage {
                     NavigationStack {
                         ScrollView {
                             Text(message)
@@ -93,10 +107,152 @@ struct VPNProviderDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func detailForm(_ provider: VPNProvider) -> some View {
+    private func release1DetailForm(_ provider: VPNProvider) -> some View {
         Form {
-            if provider.hasProviderMessage, let message = provider.providerMessage {
+            Section {
+                VPNTrafficUsageCard(
+                    providers: providerStore.providers,
+                    scopedProviderID: provider.id,
+                    embedInForm: true
+                )
+            }
+
+            Section {
+                if provider.status.isActive {
+                    Text(VPNFigmaSection550Copy.providerSettingsAlertMessage)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                LabeledContent("Name", value: provider.catalogDisplayName)
+
+                if let accountID = provider.subscriptionAccountID {
+                    copyableInfoRow(label: "ID", value: accountID)
+                }
+
+                LabeledContent("Subscription", value: subscriptionTier(for: provider))
+                LabeledContent("Status", value: statusLabel(for: provider))
+                LabeledContent("Last updated", value: lastUpdatedLabel(for: provider))
+
+                Button {
+                    if let urlString = provider.subscriptionURL, let url = URL(string: urlString) {
+                        openURL(url)
+                    } else {
+                        openURL(VelvetTheme.paywallURL)
+                    }
+                } label: {
+                    Text(VPNFigmaSection550Copy.goToProviderSite)
+                }
+            }
+
+            Section {
+                Button {
+                    refreshSubscription()
+                } label: {
+                    HStack {
+                        Text(VPNFigmaSection550Copy.updateSubscriptionAction)
+                        Spacer(minLength: 8)
+                        if providerStore.isRefreshing {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(providerStore.isRefreshing)
+
+                Button {
+                    let wasExpired = provider.status == .expired
+                    providerStore.purchaseTraffic(id: providerID)
+                    updateMessage = wasExpired
+                        ? "Added traffic. 100 GB is now available."
+                        : "Added traffic. 500 GB is now available."
+                } label: {
+                    Text(VPNFigmaSection550Copy.buyTrafficAction)
+                }
+
+                if provider.status == .expired {
+                    Button("Renew subscription") {
+                        providerStore.renewSubscription(id: providerID)
+                        updateMessage = "Subscription renewed for 30 days."
+                    }
+                }
+            }
+
+            if provider.status.isActive {
+                Section("Settings") {
+                    Toggle("Use as main VPN", isOn: mainVPNBinding(for: provider))
+                    Toggle("Smart-Auto", isOn: smartAutoBinding(for: provider))
+                    LabeledContent(
+                        "Auto-Connect",
+                        value: VPNFigmaSection550Copy.providerSettingsAutoConnectValue
+                    )
+                    Toggle("Split Tunneling", isOn: $splitTunneling)
+                    Toggle("Notifications", isOn: $notificationsEnabled)
+                }
+            }
+
+            Section {
+                Button(VPNFigmaSection550Copy.deleteSubscriptionAction, role: .destructive) {
+                    showsDeleteConfirmation = true
+                }
+            }
+        }
+    }
+
+    private func copyableInfoRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.body)
+        .contextMenu {
+            Button("Copy") {
+                UIPasteboard.general.string = value
+            }
+        }
+        .accessibilityLabel("\(label), \(value)")
+        .accessibilityHint("Copies the ID")
+    }
+
+    private func lastUpdatedLabel(for provider: VPNProvider) -> String {
+        guard let lastUpdated = provider.lastUpdated else {
+            return VPNFigmaSection550Copy.providerSettingsLastUpdated
+        }
+        return lastUpdated.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func mainVPNBinding(for provider: VPNProvider) -> Binding<Bool> {
+        Binding(
+            get: { providerStore.activeProviderID == provider.id },
+            set: { enabled in
+                if enabled {
+                    providerStore.setActiveProvider(id: provider.id)
+                } else if let velvet = providerStore.velvetProvider, velvet.status.isActive {
+                    providerStore.setActiveProvider(id: velvet.id)
+                }
+            }
+        )
+    }
+
+    private func statusLabel(for provider: VPNProvider) -> String {
+        switch provider.status {
+        case .expired:
+            VPNFigmaSection550Copy.subscriptionExpiredBadge
+        case .active:
+            VPNFigmaSection550Copy.providerSettingsStatusActive
+        }
+    }
+
+    @ViewBuilder
+    private func legacyDetailForm(_ provider: VPNProvider) -> some View {
+        Form {
+            if provider.hasProviderMessage, let message = provider.displayedProviderMessage {
                 Section {
                     Text(message)
                         .font(.subheadline)

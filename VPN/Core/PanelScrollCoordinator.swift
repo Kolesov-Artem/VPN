@@ -1,6 +1,42 @@
 import SwiftUI
 import UIKit
 
+/// Scroll-edge fade for the compact bar. Kept off the panel's own state so a
+/// flick does not rebuild the location list on every point of movement.
+@MainActor
+@Observable
+final class PanelScrollChromeModel {
+    var edgeProgress: CGFloat = 0
+
+    private var pending: CGFloat?
+    private var scheduled = false
+
+    func setProgress(_ progress: CGFloat) {
+        let clamped = min(max(progress, 0), 1)
+        pending = clamped
+        guard !scheduled else { return }
+        scheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scheduled = false
+            guard let pending = self.pending else { return }
+            self.pending = nil
+            self.apply(pending)
+        }
+    }
+
+    private func apply(_ progress: CGFloat) {
+        let atRest = progress == 0 || progress == 1
+        guard atRest || abs(edgeProgress - progress) > 0.04 else { return }
+        edgeProgress = progress
+    }
+
+    func reset() {
+        pending = nil
+        edgeProgress = 0
+    }
+}
+
 /// Context for panel-height drags while content scrolling is disabled.
 struct PanelResizeContext: Equatable {
     let baseHeight: CGFloat
@@ -14,8 +50,10 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
     let isScrollEnabled: Bool
     let bottomContentInset: CGFloat
     let panelResizeContext: PanelResizeContext?
-    @Binding var isScrollAtTop: Bool
-    @Binding var scrollEdgeProgress: CGFloat
+    /// While the finger is down, the list is pushed only when reveal crosses a step.
+    let isDraggingPanel: Bool
+    let hostedContentRevision: Int
+    var scrollChrome: PanelScrollChromeModel
     let onPanelDragChanged: (CGFloat) -> Void
     let onPanelExpandedDuringDrag: (() -> Void)?
     let onPanelDragEnded: (_ translation: CGFloat, _ predicted: CGFloat) -> Void
@@ -25,43 +63,36 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> PanelScrollViewController<Content> {
         let controller = PanelScrollViewController(rootView: content())
-        controller.scrollViewHandle = panelScrollViewHandle
-        controller.isScrollEnabled = isScrollEnabled
-        controller.bottomContentInset = bottomContentInset
-        controller.panelResizeContext = panelResizeContext
-        controller.onScrollStateChanged = { atTop, progress in
-            if isScrollAtTop != atTop {
-                isScrollAtTop = atTop
-            }
-            if abs(scrollEdgeProgress - progress) > 0.02 {
-                scrollEdgeProgress = progress
-            }
-        }
-        controller.onPanelDragChanged = onPanelDragChanged
-        controller.onPanelExpandedDuringDrag = onPanelExpandedDuringDrag
-        controller.onPanelDragEnded = onPanelDragEnded
+        apply(to: controller, pushContent: false)
+        controller.appliedHostedRevision = hostedContentRevision
         return controller
     }
 
     func updateUIViewController(_ controller: PanelScrollViewController<Content>, context: Context) {
-        let preservedOffset = controller.currentContentOffset
+        let revisionChanged = controller.appliedHostedRevision != hostedContentRevision
+        let shouldPush = !isDraggingPanel || revisionChanged
+        apply(to: controller, pushContent: shouldPush)
+    }
 
+    private func apply(to controller: PanelScrollViewController<Content>, pushContent: Bool) {
         controller.scrollViewHandle = panelScrollViewHandle
-        controller.isScrollEnabled = isScrollEnabled
-        controller.bottomContentInset = bottomContentInset
+        if controller.isScrollEnabled != isScrollEnabled {
+            controller.isScrollEnabled = isScrollEnabled
+        }
+        if controller.bottomContentInset != bottomContentInset {
+            controller.bottomContentInset = bottomContentInset
+        }
         controller.panelResizeContext = panelResizeContext
-        controller.onScrollStateChanged = { atTop, progress in
-            if isScrollAtTop != atTop {
-                isScrollAtTop = atTop
-            }
-            if abs(scrollEdgeProgress - progress) > 0.02 {
-                scrollEdgeProgress = progress
-            }
+        let chrome = scrollChrome
+        controller.onScrollStateChanged = { progress in
+            chrome.setProgress(progress)
         }
         controller.onPanelDragChanged = onPanelDragChanged
         controller.onPanelExpandedDuringDrag = onPanelExpandedDuringDrag
         controller.onPanelDragEnded = onPanelDragEnded
-        controller.updateHostedContent(content(), preservingOffset: preservedOffset)
+        guard pushContent else { return }
+        controller.appliedHostedRevision = hostedContentRevision
+        controller.updateHostedContent(content(), preservingOffset: controller.currentContentOffset)
     }
 }
 
@@ -78,7 +109,8 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     var panelResizeContext: PanelResizeContext?
 
-    var onScrollStateChanged: ((Bool, CGFloat) -> Void)?
+    var appliedHostedRevision: Int?
+    var onScrollStateChanged: ((CGFloat) -> Void)?
     var onPanelDragChanged: ((CGFloat) -> Void)?
     var onPanelExpandedDuringDrag: (() -> Void)?
     var onPanelDragEnded: ((_ translation: CGFloat, _ predicted: CGFloat) -> Void)?
@@ -94,6 +126,8 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     private var isHandedOffToScroll = false
     private var activeResizeContext: PanelResizeContext?
     private var minContentHeightConstraint: NSLayoutConstraint?
+    private var appliedLayoutWidth: CGFloat = .nan
+    private var appliedLayoutInset: CGFloat = .nan
 
     init(rootView: Content) {
         self.rootView = rootView
@@ -169,9 +203,15 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let width = scrollView.bounds.width
+        let inset = bottomContentInset
+        guard abs(width - appliedLayoutWidth) > 0.5 || abs(inset - appliedLayoutInset) > 0.5 else {
+            return
+        }
+        appliedLayoutWidth = width
+        appliedLayoutInset = inset
         let preservedOffset = scrollView.contentOffset
-        minContentHeightConstraint?.constant = -bottomContentInset
-        hostingController.view.invalidateIntrinsicContentSize()
+        minContentHeightConstraint?.constant = -inset
         if abs(scrollView.contentOffset.y - preservedOffset.y) > 0.5 {
             scrollView.contentOffset = preservedOffset
         }
@@ -179,11 +219,14 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     func updateHostedContent(_ content: Content, preservingOffset: CGPoint) {
         rootView = content
-        hostingController.rootView = content
-        view.setNeedsLayout()
-        view.layoutIfNeeded()
-        scrollView.contentOffset = preservingOffset
-        reportScrollState()
+        guard isViewLoaded else { return }
+        UIView.performWithoutAnimation {
+            hostingController.rootView = content
+            hostingController.view.invalidateIntrinsicContentSize()
+            hostingController.view.layoutIfNeeded()
+            scrollView.layoutIfNeeded()
+            scrollView.contentOffset = preservingOffset
+        }
     }
 
     func scrollToTop(animated: Bool) {
@@ -215,9 +258,8 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
 
     private func reportScrollState() {
         let offset = scrollView.contentOffset.y
-        let atTop = offset <= 0.5
         let progress = min(max(offset / 28, 0), 1)
-        onScrollStateChanged?(atTop, progress)
+        onScrollStateChanged?(progress)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {

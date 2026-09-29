@@ -179,6 +179,14 @@ struct VPNDevPanelView: View {
 
     private var flagsSection: some View {
         Section("Flags") {
+            NavigationLink("Prototype settings") {
+                HomeSettingsView(
+                    providerStore: providerStore,
+                    devRuntime: runtime,
+                    onImportFromClipboard: nil
+                )
+            }
+
             Toggle("Simulate connect failure", isOn: $connectFailSimulation)
                 .onChange(of: connectFailSimulation) { _, value in
                     VPNDevFlags.setConnectShouldFail(value)

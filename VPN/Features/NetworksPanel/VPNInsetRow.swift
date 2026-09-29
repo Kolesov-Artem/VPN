@@ -24,9 +24,9 @@ struct VPNInsetRow: View {
                     .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(VelvetTypography.rowSubtitle)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             }
 
@@ -35,10 +35,11 @@ struct VPNInsetRow: View {
             trailingMetadata
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
+        .frame(minHeight: VelvetMetrics.minTouchTarget)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: VelvetMetrics.groupedCornerRadius, style: .continuous)
                     .strokeBorder(Color.primary, lineWidth: 2)
             }
         }

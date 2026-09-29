@@ -60,6 +60,9 @@ enum VelvetTheme {
         dark: UIColor.white.withAlphaComponent(0.14)
     )
 
+    /// Wi‑Fi / LTE usage bars (Figma: black fill).
+    static let trafficProgressTint = Color.black
+
     static let horizontalPadding: CGFloat = 16
     static let controlRadius: CGFloat = 16
     static let panelRadius: CGFloat = 28

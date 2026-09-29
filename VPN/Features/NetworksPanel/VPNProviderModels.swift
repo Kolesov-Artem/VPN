@@ -46,18 +46,47 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         includedInSmartAuto && status.isActive
     }
 
+    /// Smart, Stream, and Gaming belong to Velvet subscriptions only.
+    var includesPresets: Bool {
+        status.isActive && (kind == .velvetFeatured || name.contains("Velvet"))
+    }
+
     var hasProviderMessage: Bool {
-        guard let providerMessage else { return false }
-        return !providerMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        displayedProviderMessage != nil
     }
 
     /// Rich multi-line announcements shown in the expanded stats area.
     /// Short traffic summaries belong in list subtitles only.
     var showsDetailMessage: Bool {
-        guard let providerMessage else { return false }
-        let trimmed = providerMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        return trimmed.contains("\n") || trimmed.count > 80
+        guard let displayedProviderMessage else { return false }
+        return displayedProviderMessage.contains("\n") || displayedProviderMessage.count > 80
+    }
+
+    /// Provider announcement without the trailing account ID / last-updated line.
+    var displayedProviderMessage: String? {
+        guard let providerMessage else { return nil }
+        let stripped = Self.strippingIdentityFooter(from: providerMessage)
+        return stripped.isEmpty ? nil : stripped
+    }
+
+    static func strippingIdentityFooter(from message: String) -> String {
+        var lines = message.components(separatedBy: "\n")
+        while let last = lines.last {
+            let trimmed = last.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                lines.removeLast()
+                continue
+            }
+            if isIdentityFooterLine(trimmed) {
+                lines.removeLast()
+            }
+            break
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isIdentityFooterLine(_ line: String) -> Bool {
+        line.contains("🆔") || (line.contains("⏱️") && line.contains("МСК"))
     }
 
     var subtitle: String {
@@ -153,6 +182,51 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         case .expired:
             "Subscription expired"
         }
+    }
+
+    /// Name without the trailing account number, so the ID can sit on its own line.
+    var catalogDisplayName: String {
+        guard let subscriptionAccountID else { return name }
+        let suffixes = [" — \(subscriptionAccountID)", " - \(subscriptionAccountID)", " \(subscriptionAccountID)"]
+        for suffix in suffixes where name.hasSuffix(suffix) {
+            return String(name.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return name
+    }
+
+    /// Happ-style account number, e.g. `#34903`.
+    var subscriptionAccountID: String? {
+        guard let match = name.firstMatch(of: /#\d[\d-]*/) else { return nil }
+        return String(match.0)
+    }
+
+    var lastUpdatedCaption: String? {
+        guard let lastUpdated else { return nil }
+        return "Updated \(Self.relativeDate.localizedString(for: lastUpdated, relativeTo: .now))"
+    }
+
+    /// ID and freshness on one line — same pattern as Mail accounts and App Store subscriptions.
+    var subscriptionIdentityCaption: String {
+        [subscriptionAccountID, lastUpdatedCaption]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private static let relativeDate: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
+    static func allSubscriptionsCaption(providers: [VPNProvider]) -> String {
+        let count = providers.count
+        let noun = count == 1 ? "subscription" : "subscriptions"
+        let latest = providers.compactMap(\.lastUpdated).max()
+        var parts = ["\(count) \(noun)"]
+        if let latest {
+            parts.append("Updated \(relativeDate.localizedString(for: latest, relativeTo: .now))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     func tunnelStatusLabel(isConnected: Bool, activeProviderID: UUID?) -> String {
@@ -462,25 +536,34 @@ enum VPNConnectionPlanner {
 
     static func countryGroups(from providers: [VPNProvider], scope: VPNProviderScope) -> [VPNCountryLocationGroup] {
         let merged = mergedLocations(from: scopedEligibleProviders(providers, scope: scope))
-        let grouped = Dictionary(grouping: merged) { $0.location.name }
+        let grouped = Dictionary(grouping: merged) { $0.location.listIdentity.groupingKey }
 
-        return grouped.keys.sorted().map { country in
-            let candidates = grouped[country]?.sorted { $0.location.ping < $1.location.ping } ?? []
+        return grouped.keys.sorted().map { key in
+            let unsorted = grouped[key] ?? []
+            let identity = unsorted.first?.location.listIdentity
+            let candidates = unsorted.sorted { lhs, rhs in
+                let left = lhs.location.listIdentity
+                let right = rhs.location.listIdentity
+                if left.variantRank != right.variantRank {
+                    return left.variantRank < right.variantRank
+                }
+                return lhs.location.ping < rhs.location.ping
+            }
             return VPNCountryLocationGroup(
-                id: country,
-                name: country,
-                flag: candidates.first?.location.flag ?? "🌐",
+                id: key,
+                name: identity?.groupTitle ?? key,
+                flag: identity?.groupFlag ?? candidates.first?.location.flag ?? "🌐",
+                family: identity?.family ?? .country,
                 candidates: candidates
             )
         }
-        .sorted { $0.bestPing < $1.bestPing }
     }
 
-    static func filteredCountryGroups(
+    static func filteredLocationSections(
         from providers: [VPNProvider],
         scope: VPNProviderScope,
         query: VPNLocationQuery
-    ) -> [VPNCountryLocationGroup] {
+    ) -> [VPNLocationListSection] {
         let groups = countryGroups(from: providers, scope: scope).compactMap { group -> VPNCountryLocationGroup? in
             let filtered = group.candidates.filter { query.matches($0) }
             guard !filtered.isEmpty else { return nil }
@@ -489,16 +572,31 @@ enum VPNConnectionPlanner {
                 id: group.id,
                 name: group.name,
                 flag: group.flag,
+                family: group.family,
                 candidates: sortCandidates(filtered, query: query)
             )
         }
 
-        switch query.sort {
-        case .fastest:
-            return groups.sorted { $0.bestPing < $1.bestPing }
-        case .country:
-            return groups.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        let clustered = Dictionary(grouping: groups, by: \.family)
+        return VPNLocationListFamily.listOrder.compactMap { family in
+            guard var familyGroups = clustered[family], !familyGroups.isEmpty else { return nil }
+            familyGroups = sortGroups(familyGroups, query: query)
+            let showTitle = groups.contains { $0.family.isCatalogFamily }
+            return VPNLocationListSection(
+                family: family,
+                title: showTitle ? family.sectionTitle : nil,
+                explanation: showTitle ? family.sectionExplanation : nil,
+                groups: familyGroups
+            )
         }
+    }
+
+    static func filteredCountryGroups(
+        from providers: [VPNProvider],
+        scope: VPNProviderScope,
+        query: VPNLocationQuery
+    ) -> [VPNCountryLocationGroup] {
+        filteredLocationSections(from: providers, scope: scope, query: query).flatMap(\.groups)
     }
 
     static func signalForSelection(
@@ -508,11 +606,37 @@ enum VPNConnectionPlanner {
         resolve(providers: providers, selection: selection)?.location.signal
     }
 
+    private static func sortGroups(
+        _ groups: [VPNCountryLocationGroup],
+        query: VPNLocationQuery
+    ) -> [VPNCountryLocationGroup] {
+        groups.sorted { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned {
+                return lhs.isPinned && !rhs.isPinned
+            }
+            if lhs.hasSmartServer != rhs.hasSmartServer {
+                return lhs.hasSmartServer && !rhs.hasSmartServer
+            }
+            switch query.sort {
+            case .fastest:
+                return lhs.bestPing < rhs.bestPing
+            case .country:
+                return lhs.name.localizedCompare(rhs.name) == .orderedAscending
+            }
+        }
+    }
+
     private static func sortCandidates(
         _ candidates: [VPNNetworkLocation],
         query: VPNLocationQuery
     ) -> [VPNNetworkLocation] {
         candidates.sorted { lhs, rhs in
+            let left = lhs.location.listIdentity
+            let right = rhs.location.listIdentity
+            if left.family.isCatalogFamily || right.family.isCatalogFamily,
+               left.variantRank != right.variantRank {
+                return left.variantRank < right.variantRank
+            }
             switch query.sort {
             case .fastest:
                 return lhs.location.ping < rhs.location.ping
@@ -712,6 +836,9 @@ enum VPNConnectionPlanner {
 
         switch selectionScope {
         case .allNetworks:
+            if VPNReleaseProfile.isRelease1, case let .provider(id) = storeScope {
+                return eligible.contains(where: { $0.id == id }) ? .provider(id) : storeScope
+            }
             switch storeScope {
             case .allNetworks:
                 return .allNetworks
@@ -720,6 +847,9 @@ enum VPNConnectionPlanner {
             }
 
         case let .provider(id):
+            if VPNReleaseProfile.isRelease1, case let .provider(storeID) = storeScope {
+                return eligible.contains(where: { $0.id == storeID }) ? .provider(storeID) : storeScope
+            }
             if eligible.contains(where: { $0.id == id }) {
                 return .provider(id)
             }
@@ -737,12 +867,73 @@ enum VPNConnectionPlanner {
 }
 
 extension VPNProvider {
-    static let velvetDemoMessage = """
-    📶 LTE: 0.0/40 GB (test: 3 GB)
-    ‼️ Глушат LTE — перебери все LTE-конфиги до рабочего.
-    ⛔ Перестало работать? Нажми справа от Velvet VPN на Wi-Fi.
-    🆔 1208800 / 28.08.2026 14:10 MSK
-    """
+    static let velvetDemoMessage = VPNFigmaSection550Copy.velvetProviderMessage
+
+    /// Happ snapshot from 25.09.2026: `ТИП-Страна [метка]` plus LTE and extra-country rows.
+    static let velvetHappServers: [VPNLocation] = {
+        let fast = "Быстрый. Без рекламы"
+        let hys2 = "Hysteria2. Экспериментальный"
+        let experimental = "Экспериментальная конфигурация"
+        let east = "Восточным регионам"
+        let temp = "Для временного доступа"
+        let lteUniversal = "Почти все операторы и регионы"
+
+        return [
+            velvetHappHost("SMART-Авто", "Автовыбор доступного сервера", "✨", 18),
+            velvetHappHost("SMART-Нидерланды", fast, "🇳🇱", 28, 52.3676, 4.9041),
+            velvetHappHost("SMART-Нидерланды [HYS2]", hys2, "🇳🇱", 31, 52.3676, 4.9041),
+            velvetHappHost("SMART-Швеция", fast, "🇸🇪", 34, 59.3293, 18.0686),
+            velvetHappHost("SMART-Швеция [S+]", experimental, "🇸🇪", 36, 59.3293, 18.0686),
+            velvetHappHost("SMART-Швеция [HYS2]", hys2, "🇸🇪", 38, 59.3293, 18.0686),
+            velvetHappHost("SMART-Россия", "Через Москву. Работает всё", "🇷🇺", 13, 55.7558, 37.6173),
+            velvetHappHost("SMART-Россия [HYS2]", hys2, "🇷🇺", 16, 55.7558, 37.6173),
+            velvetHappHost("SMART-Германия", fast, "🇩🇪", 42, 50.1109, 8.6821),
+            velvetHappHost("SMART-Германия [HYS2]", hys2, "🇩🇪", 45, 50.1109, 8.6821),
+            velvetHappHost("SMART-Италия", fast, "🇮🇹", 52, 41.9028, 12.4964),
+            velvetHappHost("SMART-Литва", fast, "🇱🇹", 40, 54.6872, 25.2797),
+            velvetHappHost("SMART-Литва [HYS2]", hys2, "🇱🇹", 43, 54.6872, 25.2797),
+            velvetHappHost("SMART-Франция", fast, "🇫🇷", 48, 48.8566, 2.3522),
+            velvetHappHost("SMART-Англия", fast, "🇬🇧", 54, 51.5072, -0.1276),
+            velvetHappHost("SMART-Англия [S+]", fast, "🇬🇧", 56, 51.5072, -0.1276),
+            velvetHappHost("SMART-Канада", fast, "🇨🇦", 118, 43.6532, -79.3832),
+            velvetHappHost("SMART-Канада [S+]", experimental, "🇨🇦", 122, 43.6532, -79.3832),
+            velvetHappHost("SMART-США", fast, "🇺🇸", 128, 40.7128, -74.0060),
+            velvetHappHost("SMART-Сингапур", east, "🇸🇬", 96, 1.3521, 103.8198),
+            velvetHappHost("SMART-Сингапур [S+]", experimental, "🇸🇬", 99, 1.3521, 103.8198),
+            velvetHappHost("SMART-Япония", east, "🇯🇵", 142, 35.6762, 139.6503),
+            velvetHappHost("BRIDGE-Германия", "Франкфурт через Москву", "🇩🇪", 58, 50.1109, 8.6821),
+            velvetHappHost("BRIDGE-Швеция", "Стокгольм через Москву", "🇸🇪", 62, 59.3293, 18.0686),
+            velvetHappHost("BRIDGE-Нидерланды", "Амстердам через Москву", "🇳🇱", 60, 52.3676, 4.9041),
+            velvetHappHost("🏴‍☠️ TORRENT-Нидерланды", "Разрешен torrent. Быстрый.", "🏴‍☠️", 33, 52.3676, 4.9041),
+            velvetHappHost("LTE-Авто", "Автовыбор: SMART/LTE-Авто", "✨", 22, kind: .lte),
+            velvetHappHost("#100 LTE Универсальный [HYS2]", hys2, "📶", 26, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#101 LTE Универсальный [HYS2]", hys2, "📶", 27, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#102 LTE Универсальный [HYS2]", hys2, "📶", 29, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#103 LTE Универсальный [HYS2]", hys2, "📶", 30, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#24 LTE Универсальный", lteUniversal, "📶", 24, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#11 LTE Универсальный", lteUniversal, "📶", 25, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#11-1 LTE Универсальный", lteUniversal, "📶", 28, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#9 LTE Универсальный", lteUniversal, "📶", 32, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#8 LTE Универсальный", lteUniversal, "📶", 34, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#12 LTE Универсальный", lteUniversal, "📶", 35, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#13-1 LTE Универсальный", lteUniversal, "📶", 37, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#13 LTE Универсальный", lteUniversal, "📶", 39, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#20 LTE Универсальный", lteUniversal, "📶", 41, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("#32 LTE Универсальный", lteUniversal, "📶", 44, 55.7558, 37.6173, kind: .lte),
+            velvetHappHost("Бразилия", temp, "🇧🇷", 188, -23.5558, -46.6396),
+            velvetHappHost("Германия", temp, "🇩🇪", 74, 50.1109, 8.6821),
+            velvetHappHost("Египет", temp, "🇪🇬", 86, 30.0444, 31.2357),
+            velvetHappHost("Индия", temp, "🇮🇳", 96, 19.0760, 72.8777),
+            velvetHappHost("Казахстан", temp, "🇰🇿", 42, 43.2220, 76.8512),
+            velvetHappHost("Литва", temp, "🇱🇹", 46, 54.6872, 25.2797),
+            velvetHappHost("ОАЭ", temp, "🇦🇪", 92, 25.2048, 55.2708),
+            velvetHappHost("Россия", temp, "🇷🇺", 21, 55.7558, 37.6173),
+            velvetHappHost("США", temp, "🇺🇸", 134, 40.7128, -74.0060),
+            velvetHappHost("Таиланд", temp, "🇹🇭", 88, 13.7563, 100.5018),
+            velvetHappHost("Турция", temp, "🇹🇷", 58, 41.0082, 28.9784),
+            velvetHappHost("Франция", temp, "🇫🇷", 82, 48.8566, 2.3522),
+        ]
+    }()
 
     static let samples: [VPNProvider] = {
         let velvetUpdated = Calendar.current.date(byAdding: .day, value: -2, to: .now)!
@@ -754,22 +945,11 @@ extension VPNProvider {
         return [
             VPNProvider(
                 id: UUID(uuidString: "A1000000-0000-0000-0000-000000000001")!,
-                name: "Velvet VPN",
+                name: "🚀 Velvet VPN — #34903",
                 iconSymbol: "shield.lefthalf.filled",
                 kind: .velvetFeatured,
                 status: .active(locationCount: 903, trafficRemaining: "120 GB left"),
-                servers: [
-                    VPNLocation(name: "Smart — Auto", city: "Fastest available server", flag: "✨", kind: .smart, ping: 24),
-                    VPNLocation(name: "Russia", city: "Moscow", flag: "🇷🇺", kind: .lte, ping: 18, coordinate: GeoCoordinate(latitude: 55.7558, longitude: 37.6173)),
-                    VPNLocation(name: "Russia", city: "Saint Petersburg", flag: "🇷🇺", kind: .standard, ping: 26, coordinate: GeoCoordinate(latitude: 59.9311, longitude: 30.3609)),
-                    VPNLocation(name: "Netherlands", city: "Amsterdam", flag: "🇳🇱", kind: .standard, ping: 78, coordinate: GeoCoordinate(latitude: 52.3676, longitude: 4.9041)),
-                    VPNLocation(name: "Finland", city: "Helsinki", flag: "🇫🇮", kind: .standard, ping: 64, coordinate: GeoCoordinate(latitude: 60.1699, longitude: 24.9384)),
-                    VPNLocation(name: "Sweden", city: "Stockholm", flag: "🇸🇪", kind: .standard, ping: 69, coordinate: GeoCoordinate(latitude: 59.3293, longitude: 18.0686)),
-                    VPNLocation(name: "Poland", city: "Warsaw", flag: "🇵🇱", kind: .standard, ping: 58, coordinate: GeoCoordinate(latitude: 52.2297, longitude: 21.0122)),
-                    VPNLocation(name: "Turkey", city: "Istanbul", flag: "🇹🇷", kind: .standard, ping: 73, coordinate: GeoCoordinate(latitude: 41.0082, longitude: 28.9784)),
-                    VPNLocation(name: "Switzerland", city: "Zurich", flag: "🇨🇭", kind: .standard, ping: 81, coordinate: GeoCoordinate(latitude: 47.3769, longitude: 8.5417)),
-                    VPNLocation(name: "United States", city: "New York", flag: "🇺🇸", kind: .standard, ping: 128, coordinate: GeoCoordinate(latitude: 40.7128, longitude: -74.0060)),
-                ],
+                servers: Self.velvetHappServers,
                 subscriptionURL: "https://velvet.vpn/sub/featured-demo",
                 lastUpdated: velvetUpdated,
                 expiresAt: velvetExpires,
@@ -836,5 +1016,30 @@ extension VPNProvider {
             ),
         ]
     }()
+}
+
+private func velvetHappHost(
+    _ title: String,
+    _ caption: String,
+    _ flag: String,
+    _ ping: Int,
+    _ latitude: Double? = nil,
+    _ longitude: Double? = nil,
+    kind: VPNLocation.Kind = .standard
+) -> VPNLocation {
+    let coordinate: GeoCoordinate?
+    if let latitude, let longitude {
+        coordinate = GeoCoordinate(latitude: latitude, longitude: longitude)
+    } else {
+        coordinate = nil
+    }
+    return VPNLocation(
+        name: title,
+        city: caption,
+        flag: flag,
+        kind: kind,
+        ping: ping,
+        coordinate: coordinate
+    )
 }
 

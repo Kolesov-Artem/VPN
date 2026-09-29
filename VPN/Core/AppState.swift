@@ -141,7 +141,7 @@ struct GeoCoordinate: Equatable, Codable {
 }
 
 struct VPNLocation: Identifiable, Equatable, Codable {
-    enum Kind: Equatable, Codable {
+    enum Kind: Equatable, Hashable, Codable {
         case smart
         case lte
         case standard
@@ -367,9 +367,7 @@ extension VPNLocationQuery {
         guard !trimmed.isEmpty else { return true }
 
         let haystack = [
-            location.name,
-            location.city,
-            location.kind.title,
+            VPNLocationListCatalog.searchText(for: location),
             networkLocation.provider.name,
             networkLocation.optimizationHint,
         ]

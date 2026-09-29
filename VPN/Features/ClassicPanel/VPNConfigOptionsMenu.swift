@@ -15,6 +15,7 @@ enum VPNConfigMenuAction {
 struct VPNConfigOptionsMenu<MenuLabel: View>: View {
     @Binding var showsDeleteConfirmation: Bool
     var showsProviderSettings = false
+    var usesRelease1Copy = false
     var onAction: (VPNConfigMenuAction) -> Void
     @ViewBuilder var label: () -> MenuLabel
 
@@ -24,7 +25,7 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
                 Button {
                     onAction(.info)
                 } label: {
-                    Label("Info", systemImage: "info.circle")
+                    Label(usesRelease1Copy ? "VPN info" : "Info", systemImage: "info.circle")
                 }
                 Button {
                     onAction(.support)

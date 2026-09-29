@@ -21,7 +21,15 @@ fi
 
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b
-open -a Simulator --args -CurrentDeviceUDID "$UDID"
+SIMULATOR_APP="/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app"
+DEVICE_HUB_APP="/Applications/Xcode.app/Contents/Developer/Applications/DeviceHub.app"
+if [[ -d "$SIMULATOR_APP" ]]; then
+  open -a "$SIMULATOR_APP" --args -CurrentDeviceUDID "$UDID"
+elif [[ -d "$DEVICE_HUB_APP" ]]; then
+  open -a "$DEVICE_HUB_APP"
+else
+  echo "Warning: Simulator.app not found; app will launch headless on $SIMULATOR_NAME." >&2
+fi
 
 echo "Building $SCHEME for $SIMULATOR_NAME ($UDID)..."
 xcodebuild \
@@ -37,7 +45,7 @@ xcrun simctl install "$UDID" "$APP_PATH"
 xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
 
 # simctl launch can block on some Xcode/Simulator versions; run detached.
-LAUNCH_FLAGS="${LAUNCH_FLAGS:---promo-demo}"
+LAUNCH_FLAGS="${LAUNCH_FLAGS:---multi-provider}"
 # shellcheck disable=SC2086
 xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" --show-home --panel-island $LAUNCH_FLAGS >/dev/null 2>&1 &
 sleep 2

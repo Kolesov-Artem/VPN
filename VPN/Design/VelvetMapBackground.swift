@@ -46,7 +46,7 @@ struct VelvetMapBackground: View {
                     }
                 }
                 .mapStyle(.hybrid(elevation: .realistic, pointsOfInterest: .excludingAll))
-                .onMapCameraChange(frequency: autoRotates ? .onEnd : .continuous) { context in
+                .onMapCameraChange(frequency: .onEnd) { context in
                     visibleRegion = context.region
                 }
                 .modifier(MapInteractionModifier(

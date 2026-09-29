@@ -6,8 +6,14 @@ struct VPNProviderBrandIcon: View {
     let provider: VPNProvider
     var size: CGFloat = VelvetMetrics.islandProviderIconSize
 
+    private var usesVelvetMark: Bool {
+        provider.kind == .velvetFeatured || provider.name.contains("Velvet")
+    }
+
     private var gradientColors: [Color] {
-        if provider.kind == .velvetFeatured {
+        if provider.status == .expired {
+            [Color(red: 1, green: 0.45, blue: 0.42), VelvetTheme.errorTint]
+        } else if usesVelvetMark {
             [VelvetTheme.softPurple, VelvetTheme.accent]
         } else {
             [
@@ -36,9 +42,15 @@ struct VPNProviderBrandIcon: View {
                     )
                 )
 
-            Image(systemName: provider.iconSymbol)
-                .font(iconFont)
-                .foregroundStyle(.white)
+            if provider.status == .expired {
+                Text("V")
+                    .font(iconFont)
+                    .foregroundStyle(.white)
+            } else {
+                Image(systemName: provider.iconSymbol)
+                    .font(iconFont)
+                    .foregroundStyle(.white)
+            }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -169,24 +181,138 @@ struct VPNProviderIconStack: View {
     }
 }
 
+struct VPNActiveProviderPickerPill: View {
+    let providerName: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Self.pickerLabel(providerName)
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel("Active VPN, \(providerName)")
+    }
+
+    static func pickerLabel(_ providerName: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.body)
+            Text(providerName)
+                .font(.body)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 14)
+        .frame(height: VelvetMetrics.islandChromeButtonSize)
+        .frame(maxWidth: 148)
+        .background(Color(.tertiarySystemFill), in: Capsule())
+    }
+}
+
+struct VPNActiveProviderPickerMenu: View {
+    let providers: [VPNProvider]
+    let activeProviderID: UUID?
+    let onSelect: (UUID) -> Void
+
+    private var activeName: String {
+        let provider = providers.first(where: { $0.id == activeProviderID }) ?? providers.first
+        return provider?.catalogDisplayName ?? "VPN"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(providers) { provider in
+                Button {
+                    onSelect(provider.id)
+                } label: {
+                    if provider.id == activeProviderID {
+                        Label(provider.catalogDisplayName, systemImage: "checkmark")
+                    } else {
+                        Text(provider.catalogDisplayName)
+                    }
+                }
+                .disabled(provider.status == .expired)
+            }
+        } label: {
+            VPNActiveProviderPickerPill.pickerLabel(activeName)
+        }
+        .accessibilityLabel("Active VPN, \(activeName)")
+    }
+}
+
 struct VPNIslandCollapsedHeader: View {
+    enum Style {
+        case standard
+        case fastestMultiVPN
+    }
+
     let provider: VPNProvider
     let title: String
     let subtitle: String
+    var style: Style = .standard
     var providers: [VPNProvider] = []
     var showsMultiProviderSummary: Bool = false
     var activePreset: VPNUseCaseMenuChoice?
     var onPresetSelected: ((VPNUseCaseMenuChoice) -> Void)?
-    var onProviderTap: (() -> Void)?
+    var providerPickerProviders: [VPNProvider] = []
+    var activeProviderID: UUID?
+    var onSelectActiveProvider: ((UUID) -> Void)?
+    var onSummaryTap: (() -> Void)?
     let expandSystemName: String
     let onExpand: () -> Void
 
     var body: some View {
+        switch style {
+        case .fastestMultiVPN:
+            fastestMultiVPNBody
+        case .standard:
+            standardBody
+        }
+    }
+
+    private var standardBody: some View {
         HStack(spacing: 12) {
             providerSummary
 
+            if let onSelectActiveProvider, !providerPickerProviders.isEmpty {
+                VPNActiveProviderPickerMenu(
+                    providers: providerPickerProviders,
+                    activeProviderID: activeProviderID,
+                    onSelect: onSelectActiveProvider
+                )
+            }
+
             if let onPresetSelected {
                 VPNUseCasePresetsMenu(activeChoice: activePreset, onSelect: onPresetSelected)
+            }
+
+            VPNIslandChromeButton(systemName: expandSystemName, action: onExpand)
+        }
+        .padding(8)
+    }
+
+    private var fastestMultiVPNBody: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(VelvetTheme.mainTextDark)
+                    .lineLimit(1)
+
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let onSelectActiveProvider, !providerPickerProviders.isEmpty {
+                VPNActiveProviderPickerMenu(
+                    providers: providerPickerProviders,
+                    activeProviderID: activeProviderID,
+                    onSelect: onSelectActiveProvider
+                )
             }
 
             VPNIslandChromeButton(systemName: expandSystemName, action: onExpand)
@@ -217,8 +343,8 @@ struct VPNIslandCollapsedHeader: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        if let onProviderTap {
-            Button(action: onProviderTap) { content }
+        if let onSummaryTap {
+            Button(action: onSummaryTap) { content }
                 .buttonStyle(PressScaleButtonStyle())
         } else {
             content
@@ -233,6 +359,7 @@ struct VPNPrimaryConnectionButton: View {
     let connectionState: VPNConnectionState
     var size: ControlSize = .large
     var usesErrorTint = true
+    var showsPowerIcon = true
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -241,13 +368,19 @@ struct VPNPrimaryConnectionButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Group {
-                    if connectionState == .connecting {
+                    if showsPowerIcon {
+                        if connectionState == .connecting {
+                            ProgressView()
+                                .controlSize(size)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "power")
+                                .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
+                        }
+                    } else if connectionState == .connecting {
                         ProgressView()
                             .controlSize(size)
                             .tint(.white)
-                    } else {
-                        Image(systemName: "power")
-                            .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
                     }
                 }
                 .contentTransition(.symbolEffect(.replace))

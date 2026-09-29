@@ -4,8 +4,8 @@ import SwiftUI
 struct VPNCompactNetworksCard: View {
     @Bindable var providerStore: VPNProviderStore
     var showsBackground: Bool = true
-    var cornerRadius: CGFloat = VelvetMetrics.contentSurfaceCornerRadius
-    var contentHorizontalPadding: CGFloat = 16
+    var cornerRadius: CGFloat = VelvetMetrics.groupedCornerRadius
+    var contentHorizontalPadding: CGFloat = VelvetMetrics.providersCardHorizontalPadding
     var summaryTitle: String?
     let onOpenProvider: (UUID) -> Void
 
@@ -20,6 +20,9 @@ struct VPNCompactNetworksCard: View {
             return summaryTitle
         }
         let count = providers.count
+        if VPNReleaseProfile.isRelease1 {
+            return VPNFigmaSection550Copy.providersSummary(count: count)
+        }
         let providerWord = count == 1 ? "provider" : "providers"
         return "\(count) VPN \(providerWord)"
     }
@@ -41,7 +44,7 @@ struct VPNCompactNetworksCard: View {
             } label: {
                 HStack(spacing: 8) {
                     Text(resolvedSummaryTitle)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.body)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
@@ -54,7 +57,7 @@ struct VPNCompactNetworksCard: View {
                     Spacer(minLength: 4)
 
                     Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
@@ -103,15 +106,8 @@ struct VPNCompactNetworksCard: View {
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(provider.name)
-                            .foregroundStyle(.primary)
-                        if provider.kind == .velvetFeatured {
-                            Text("Featured")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(VelvetTheme.accent)
-                        }
-                    }
+                    Text(provider.name)
+                        .foregroundStyle(.primary)
 
                     Text(provider.networksListSubtitle)
                         .font(.footnote)
@@ -122,7 +118,7 @@ struct VPNCompactNetworksCard: View {
                 Spacer(minLength: 4)
 
                 if provider.status == .expired {
-                    Text("Expired")
+                    Text(VPNFigmaSection550Copy.subscriptionExpiredBadge)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(VelvetTheme.errorTint)
                         .padding(.horizontal, 8)
@@ -139,6 +135,6 @@ struct VPNCompactNetworksCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(provider.name), provider settings")
     }
 }
-

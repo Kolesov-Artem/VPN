@@ -48,6 +48,7 @@ enum LocationSearchChrome {
 /// Search field and filter button in the panel footer row.
 struct LocationSearchBar: View {
     @Binding var query: VPNLocationQuery
+    var placeholder: String = "Country, city or type"
     var isFocused: FocusState<Bool>.Binding
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -59,7 +60,7 @@ struct LocationSearchBar: View {
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.secondary)
 
-                TextField("Country, city or type", text: $query.text)
+                TextField(placeholder, text: $query.text)
                     .focused(isFocused)
                     .font(.body)
                     .textInputAutocapitalization(.never)
@@ -100,6 +101,7 @@ struct LocationSearchBar: View {
 /// Search row for the panel search dock, including keyboard lift.
 struct PanelLocationSearchControls: View {
     @Binding var query: VPNLocationQuery
+    var searchPlaceholder: String = "Country, city or type"
     var isFocused: FocusState<Bool>.Binding
     let bottomMargin: CGFloat
     let safeAreaBottom: CGFloat
@@ -117,7 +119,7 @@ struct PanelLocationSearchControls: View {
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .allowsHitTesting(false)
 
-            LocationSearchBar(query: $query, isFocused: isFocused)
+            LocationSearchBar(query: $query, placeholder: searchPlaceholder, isFocused: isFocused)
                 .padding(.bottom, bottomMargin)
         }
         .modifier(

@@ -306,6 +306,7 @@ struct VPNCountryLocationGroup: Identifiable, Equatable {
     let id: String
     let name: String
     let flag: String
+    let family: VPNLocationListFamily
     let candidates: [VPNNetworkLocation]
 
     var bestPing: Int {
@@ -318,6 +319,14 @@ struct VPNCountryLocationGroup: Identifiable, Equatable {
 
     var areaLabel: String {
         candidates.first?.location.city ?? name
+    }
+
+    var isPinned: Bool {
+        candidates.contains { $0.location.listIdentity.isPinned }
+    }
+
+    var hasSmartServer: Bool {
+        candidates.contains { $0.location.name.hasPrefix("SMART-") }
     }
 }
 
@@ -335,6 +344,9 @@ enum VPNLocationRowCopy {
     }
 
     static func countryGroup(_ group: VPNCountryLocationGroup) -> String {
+        if group.family.isCatalogFamily {
+            return catalogCountryGroup(group)
+        }
         if group.candidates.count > 1 {
             return "Best \(group.bestPing) ms · \(group.providerCount) providers"
         }
@@ -344,7 +356,30 @@ enum VPNLocationRowCopy {
         return group.areaLabel
     }
 
+    static func catalogNestedRow(_ candidate: VPNNetworkLocation) -> (title: String, subtitle: String) {
+        let identity = candidate.location.listIdentity
+        return (identity.nestedTitle, identity.nestedSubtitle)
+    }
+
+    private static func catalogCountryGroup(_ group: VPNCountryLocationGroup) -> String {
+        switch group.name {
+        case "Универсальный":
+            return "Почти все операторы. Перебери, если Smart LTE не помог"
+        case "Запасной протокол":
+            return "Если универсальные не берутся"
+        default:
+            break
+        }
+        let preferred = group.candidates.min {
+            $0.location.listIdentity.variantRank < $1.location.listIdentity.variantRank
+        }
+        return preferred?.location.listIdentity.nestedSubtitle ?? group.areaLabel
+    }
+
     static func networkLocation(_ candidate: VPNNetworkLocation) -> String {
+        if candidate.provider.kind == .velvetFeatured {
+            return candidate.location.city
+        }
         if let hint = candidate.optimizationHint {
             return "\(candidate.provider.name) · \(hint)"
         }
