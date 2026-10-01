@@ -12,10 +12,10 @@ private enum DevConnectionPreset: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .disconnected: "Disconnected"
-        case .connecting: "Connecting"
-        case .connected: "Connected"
-        case .failed: "Failed"
+        case .disconnected: ui("Disconnected")
+        case .connecting: ui("Connecting")
+        case .connected: ui("Connected")
+        case .failed: ui("Failed")
         }
     }
 }
@@ -49,6 +49,7 @@ struct VPNDevPanelView: View {
     let runtime: VPNDevRuntime
 
     @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
+    @AppStorage(VPNHomeChrome.storageKey) private var homeChrome = VPNHomeChrome.island
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
     @AppStorage("velvet.panelDetentMode") private var panelDetentMode = VPNPanelDetentMode.stepped
     @AppStorage("velvet.autoConnect") private var autoConnect = false
@@ -68,7 +69,7 @@ struct VPNDevPanelView: View {
             mockStatsSection
             flagsSection
         }
-        .navigationTitle("Developer")
+        .navigationTitle(ui("Developer"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             connectFailSimulation = VPNDevFlags.connectShouldFail
@@ -79,7 +80,7 @@ struct VPNDevPanelView: View {
     private var scenariosSection: some View {
         Section {
             if let active = providerStore.activePrototypeScenario {
-                LabeledContent("Active", value: active.title)
+                LabeledContent(ui("Active"), value: active.title)
                     .font(.subheadline.weight(.semibold))
             }
 
@@ -104,15 +105,15 @@ struct VPNDevPanelView: View {
                 }
             }
         } header: {
-            Text("Prototype states")
+            Text(ui("Prototype states"))
         } footer: {
-            Text("Each state resets providers, connection, scope, and flags so the screen matches the scenario.")
+            Text(ui("Each state resets providers, connection, scope, and flags so the screen matches the scenario."))
         }
     }
 
     private var navigationSection: some View {
-        Section("App route") {
-            Picker("Screen", selection: routeBinding) {
+        Section(ui("App route")) {
+            Picker(ui("Screen"), selection: routeBinding) {
                 ForEach(DevAppRouteOption.allCases) { option in
                     Text(option.rawValue.capitalized).tag(option)
                 }
@@ -121,42 +122,48 @@ struct VPNDevPanelView: View {
     }
 
     private var layoutSection: some View {
-        Section("Layout") {
-            Picker("Home layout", selection: $homeFormat) {
+        Section(ui("Layout")) {
+            Picker(ui("Home"), selection: $homeChrome) {
+                ForEach(VPNHomeChrome.allCases) { chrome in
+                    Text(chrome.title).tag(chrome)
+                }
+            }
+
+            Picker(ui("Home layout"), selection: $homeFormat) {
                 ForEach(VPNHomeFormat.allCases) { format in
                     Text(format.title).tag(format)
                 }
             }
 
-            Picker("Panel style", selection: $panelStyle) {
+            Picker(ui("Panel style"), selection: $panelStyle) {
                 ForEach(VPNPanelStyle.allCases) { style in
                     Text(style.title).tag(style)
                 }
             }
 
-            Picker("Detent behavior", selection: $panelDetentMode) {
+            Picker(ui("Detent behavior"), selection: $panelDetentMode) {
                 ForEach(VPNPanelDetentMode.allCases) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
 
-            Picker("Panel position", selection: runtime.panelPosition) {
-                Text("Collapsed").tag(BottomPanelPosition.island)
-                Text("Half").tag(BottomPanelPosition.intermediate)
-                Text("Full").tag(BottomPanelPosition.expanded)
+            Picker(ui("Panel position"), selection: runtime.panelPosition) {
+                Text(ui("Collapsed")).tag(BottomPanelPosition.island)
+                Text(ui("Half")).tag(BottomPanelPosition.intermediate)
+                Text(ui("Full")).tag(BottomPanelPosition.expanded)
             }
         }
     }
 
     private var connectionSection: some View {
-        Section("Connection") {
-            Picker("State", selection: connectionPresetBinding) {
+        Section(ui("Connection")) {
+            Picker(ui("State"), selection: connectionPresetBinding) {
                 ForEach(DevConnectionPreset.allCases) { preset in
                     Text(preset.title).tag(preset)
                 }
             }
 
-            Toggle("Auto-connect on launch", isOn: $autoConnect)
+            Toggle(ui("Auto-connect on launch"), isOn: $autoConnect)
         }
     }
 
@@ -164,8 +171,8 @@ struct VPNDevPanelView: View {
         Section {
             Stepper("Ping: \(runtime.livePingMs.wrappedValue) ms", value: runtime.livePingMs, in: 0...500, step: 1)
 
-            TextField("Download", text: runtime.downloadRate)
-            TextField("Upload", text: runtime.uploadRate)
+            TextField(ui("Download"), text: runtime.downloadRate)
+            TextField(ui("Upload"), text: runtime.uploadRate)
 
             Stepper("Usage: \(mockUsagePercent)%", value: $mockUsagePercent, in: 0...100, step: 1)
                 .onChange(of: mockUsagePercent) { _, value in
@@ -173,13 +180,13 @@ struct VPNDevPanelView: View {
                         Int64(Double(sessionDataLimitBytes) * Double(value) / 100)
                 }
         } header: {
-            Text("Mock stats")
+            Text(ui("Mock stats"))
         }
     }
 
     private var flagsSection: some View {
-        Section("Flags") {
-            NavigationLink("Prototype settings") {
+        Section(ui("Flags")) {
+            NavigationLink(ui("Prototype settings")) {
                 HomeSettingsView(
                     providerStore: providerStore,
                     devRuntime: runtime,
@@ -187,18 +194,18 @@ struct VPNDevPanelView: View {
                 )
             }
 
-            Toggle("Simulate connect failure", isOn: $connectFailSimulation)
+            Toggle(ui("Simulate connect failure"), isOn: $connectFailSimulation)
                 .onChange(of: connectFailSimulation) { _, value in
                     VPNDevFlags.setConnectShouldFail(value)
                 }
 
-            Toggle("Dismiss Settings after apply", isOn: $dismissAfterApply)
+            Toggle(ui("Dismiss Settings after apply"), isOn: $dismissAfterApply)
 
-            Button("Show renewal banners again") {
+            Button(ui("Show renewal banners again")) {
                 providerStore.hiddenRenewalBannerIDs.removeAll()
             }
 
-            LabeledContent("Launch args", value: launchArgsSummary)
+            LabeledContent(ui("Launch args"), value: launchArgsSummary)
                 .font(.caption)
         }
     }

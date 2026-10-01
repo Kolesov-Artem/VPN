@@ -17,12 +17,12 @@ struct VPNProviderEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Identity") {
-                    TextField("Name", text: $name)
+                Section(ui("Identity")) {
+                    TextField(ui("Name"), text: $name)
                 }
 
-                Section("Subscription") {
-                    TextField("Subscription URL", text: $subscriptionURL)
+                Section(ui("Subscription")) {
+                    TextField(ui("Subscription URL"), text: $subscriptionURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -36,14 +36,14 @@ struct VPNProviderEditView: View {
                     .disabled(subscriptionURL.isEmpty)
                 }
             }
-            .navigationTitle("Edit provider")
+            .navigationTitle(ui("Edit provider"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(ui("Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(ui("Save")) {
                         save()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

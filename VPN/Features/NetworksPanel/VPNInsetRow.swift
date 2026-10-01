@@ -19,11 +19,11 @@ struct VPNInsetRow: View {
             leading
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(ui(title))
                     .font(isSelected ? .body.weight(.semibold) : .body)
                     .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
+                    Text(ui(subtitle))
                         .font(VelvetTypography.rowSubtitle)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -83,7 +83,7 @@ struct VPNInsetRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .accessibilityLabel("Selected")
+                    .accessibilityLabel(ui("Selected"))
             }
 
             chevronSlot

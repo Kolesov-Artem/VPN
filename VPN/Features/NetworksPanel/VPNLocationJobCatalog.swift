@@ -29,29 +29,29 @@ enum VPNUserJob: String, CaseIterable, Identifiable, Codable, Hashable {
 
     var title: String {
         switch self {
-        case .mobileLTE: "Mobile / LTE"
-        case .whitelistForeign: "Whitelist & foreign access"
-        case .sport: "Sport"
-        case .streaming: "Streaming"
-        case .gaming: "Gaming"
-        case .work: "Work"
-        case .privacy: "Privacy"
-        case .socialMedia: "Social media"
-        case .europeTravel: "Smart-Europe"
+        case .mobileLTE: ui("Mobile / LTE")
+        case .whitelistForeign: ui("Whitelist & foreign access")
+        case .sport: ui("Sport")
+        case .streaming: ui("Streaming")
+        case .gaming: ui("Gaming")
+        case .work: ui("Work")
+        case .privacy: ui("Privacy")
+        case .socialMedia: ui("Social media")
+        case .europeTravel: ui("Smart-Europe")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .mobileLTE: "When mobile data is throttled or jammed"
-        case .whitelistForeign: "Foreign & non-whitelist via VPN · whitelisted sites direct"
-        case .sport: "Best for Sport1, DAZN, Setanta"
-        case .streaming: "Best for ITV, Disney+, Netflix"
-        case .gaming: "Low latency game servers"
-        case .work: "Stable video calls and remote desktop"
-        case .privacy: "Minimal logging endpoints"
-        case .socialMedia: "Instagram, X, and blocked social apps"
-        case .europeTravel: "Travel and EU streaming content"
+        case .mobileLTE: ui("When mobile data is throttled or jammed")
+        case .whitelistForeign: ui("Foreign & non-whitelist via VPN · whitelisted sites direct")
+        case .sport: ui("Best for Sport1, DAZN, Setanta")
+        case .streaming: ui("Best for ITV, Disney+, Netflix")
+        case .gaming: ui("Low latency game servers")
+        case .work: ui("Stable video calls and remote desktop")
+        case .privacy: ui("Minimal logging endpoints")
+        case .socialMedia: ui("Instagram, X, and blocked social apps")
+        case .europeTravel: ui("Travel and EU streaming content")
         }
     }
 
@@ -86,31 +86,31 @@ enum VPNUseCaseMenuChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .smart: "Smart"
-        case .restrictedNetwork: "Restricted network"
-        case .watchAndPlay: "Watch & play"
-        case .workAndBrowse: "Work & browse"
-        case .travel: "Travel"
+        case .smart: ui("Smart")
+        case .restrictedNetwork: ui("Restricted network")
+        case .watchAndPlay: ui("Watch & play")
+        case .workAndBrowse: ui("Work & browse")
+        case .travel: ui("Travel")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .smart: "Finds the best connection for you"
-        case .restrictedNetwork: "Primary in Russia when mobile data or whitelists get in the way"
-        case .watchAndPlay: "Sport streams, TV apps, and low-latency games"
-        case .workAndBrowse: "Calls, privacy-focused routes, and social apps"
-        case .travel: "EU streaming while traveling abroad"
+        case .smart: ui("Finds the best connection for you")
+        case .restrictedNetwork: ui("Primary in Russia when mobile data or whitelists get in the way")
+        case .watchAndPlay: ui("Sport streams, TV apps, and low-latency games")
+        case .workAndBrowse: ui("Calls, privacy-focused routes, and social apps")
+        case .travel: ui("EU streaming while traveling abroad")
         }
     }
 
     var panelLabel: String {
         switch self {
-        case .smart: "Smart"
-        case .restrictedNetwork: "Restricted"
-        case .watchAndPlay: "Watch"
-        case .workAndBrowse: "Work"
-        case .travel: "Travel"
+        case .smart: ui("Smart")
+        case .restrictedNetwork: ui("Restricted")
+        case .watchAndPlay: ui("Watch")
+        case .workAndBrowse: ui("Work")
+        case .travel: ui("Travel")
         }
     }
 
@@ -127,11 +127,11 @@ enum VPNUseCaseMenuChoice: String, CaseIterable, Identifiable {
     /// Short copy for the horizontal cards in the expanded sheet.
     var cardSubtitle: String {
         switch self {
-        case .smart: "Fastest available server"
-        case .restrictedNetwork: "Mobile data & whitelists in Russia"
-        case .watchAndPlay: "Sport1, DAZN, ITV and games"
-        case .workAndBrowse: "Calls, privacy, and social apps"
-        case .travel: "EU streaming while abroad"
+        case .smart: ui("Picks the best server")
+        case .restrictedNetwork: ui("Mobile data & whitelists in Russia")
+        case .watchAndPlay: ui("Sport1, DAZN, ITV and games")
+        case .workAndBrowse: ui("Calls, privacy, and social apps")
+        case .travel: ui("EU streaming while abroad")
         }
     }
 
@@ -292,7 +292,7 @@ enum VPNLocationJobCatalog {
         case "Germany":
             VPNSmartCountryLocation(
                 job: .europeTravel,
-                title: "Smart-Europe",
+                title: ui("Smart-Europe"),
                 subtitle: VPNLocationRowCopy.smartEurope(),
                 iconSymbol: VPNUserJob.europeTravel.iconSymbol
             )
@@ -332,7 +332,7 @@ struct VPNCountryLocationGroup: Identifiable, Equatable {
 
 enum VPNLocationRowCopy {
     static func smartAuto(scope: VPNProviderScope, providers: [VPNProvider]) -> String {
-        "Fastest across \(VPNSelectionSummary.scopeLabel(for: scope, providers: providers))"
+        uiFormat("Smart across %@", VPNSelectionSummary.scopeLabel(for: scope, providers: providers))
     }
 
     static func smartRussia() -> String {
@@ -348,7 +348,7 @@ enum VPNLocationRowCopy {
             return catalogCountryGroup(group)
         }
         if group.candidates.count > 1 {
-            return "Best \(group.bestPing) ms · \(group.providerCount) providers"
+            return uiFormat("Best %lld ms · %lld providers", group.bestPing, group.providerCount)
         }
         if let candidate = group.candidates.first {
             return networkLocation(candidate)

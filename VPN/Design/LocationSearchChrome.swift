@@ -76,7 +76,7 @@ struct LocationSearchBar: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+                    .accessibilityLabel(ui("Clear search"))
                 }
             }
             .padding(.horizontal, LocationSearchChrome.fieldHorizontalPadding)

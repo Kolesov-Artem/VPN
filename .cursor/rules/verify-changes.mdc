@@ -1,0 +1,35 @@
+---
+description: Always verify implemented changes before marking work complete
+alwaysApply: true
+---
+
+# Verify What You Ship
+
+Never claim a task is done without testing the change yourself.
+
+## Required before finishing
+
+1. **Run the relevant check** for the change type:
+   - Code: build and/or targeted tests (`xcodebuild`, `swift test`, `npm test`, etc.)
+   - UI/behavior: confirm the feature actually works, not only that it compiles
+   - Settings/flags: change the setting and verify the runtime effect
+   - Fixes: reproduce the bug first when possible, then confirm it is gone
+
+2. **If a check fails**, diagnose and retry with another approach. Do not stop after one failure.
+
+3. **Report honestly**:
+   - What you ran
+   - What passed or failed
+   - What you could not verify and why
+
+## UI and interaction changes
+
+- Do not rely on "should work" reasoning alone.
+- For toggles, animations, and state-driven UI: exercise the user path (e.g. open Settings, switch mode, observe the screen).
+- If simulator/device is unavailable, say so explicitly and run every automated check that is available.
+
+## Anti-patterns
+
+- ❌ "Build succeeded, so it should work"
+- ❌ Implementing a setting without confirming it affects runtime behavior
+- ❌ Fixing only the compile error without validating the original request

@@ -13,9 +13,11 @@ enum VelvetMotion {
     static let contentDuration = 0.22
     /// Map scrim and connection tint.
     static let scrimDuration = 0.55
-    /// Decorative map camera travel (on-screen movement, not UI chrome).
-    static let mapCameraDuration = 0.55
-    static let mapCameraReducedDuration = 0.25
+    /// Decorative map camera travel — on-screen movement, not UI chrome.
+    static let mapCameraDuration = 0.48
+    static let mapCameraReducedDuration = 0.22
+    /// Color flooding out from the chosen city. Occasional state change, not a control.
+    static let mapWaveDuration = 0.55
     /// Onboarding globe spin-up.
     static let globeIntroDuration = 0.9
 
@@ -48,8 +50,8 @@ enum VelvetMotion {
         dampingFraction: 0.88
     )
     private static let mapSpring = Animation.spring(
-        response: 0.55,
-        dampingFraction: 0.92
+        response: 0.48,
+        dampingFraction: 1.0
     )
 
     // MARK: - Curves (cubic-bezier equivalents from animations.dev)
@@ -62,6 +64,11 @@ enum VelvetMotion {
     /// `cubic-bezier(0.77, 0, 0.175, 1)` — on-screen movement / morphing.
     static func easeInOut(duration: Double) -> Animation {
         .timingCurve(0.77, 0, 0.175, 1, duration: duration)
+    }
+
+    /// `cubic-bezier(0.32, 0.72, 0, 1)` — iOS drawer. Fast start, soft settle.
+    static func easeDrawer(duration: Double) -> Animation {
+        .timingCurve(0.32, 0.72, 0, 1, duration: duration)
     }
 
     // MARK: - Composed animations
@@ -131,12 +138,53 @@ enum VelvetMotion {
             : easeInOut(duration: scrimDuration)
     }
 
+    /// New connection color spreading from the city. Reduced motion cuts straight to the color.
+    static func mapWave(reduceMotion: Bool) -> Animation {
+        reduceMotion ? easeOut(duration: quickDuration) : easeInOut(duration: mapWaveDuration)
+    }
+
+    /// Brief push toward the city as the color arrives, then the settle back.
+    static func mapZoomIn(reduceMotion: Bool) -> Animation {
+        easeInOut(duration: reduceMotion ? 0.12 : 0.22)
+    }
+
+    static func mapZoomOut(reduceMotion: Bool) -> Animation {
+        easeInOut(duration: reduceMotion ? 0.12 : 0.32)
+    }
+
     static func keyboard(reduceMotion: Bool, duration: Double) -> Animation {
         reduceMotion ? .linear(duration: 0.01) : easeOut(duration: duration)
     }
 
     static func accordion(reduceMotion: Bool) -> Animation {
         easeOut(duration: reduceMotion ? 0.12 : quickDuration)
+    }
+
+    /// Glass unfurling out of the availability pill. Entrance, so ease-out — the drawer curve.
+    /// 280ms stays inside the drawer budget without feeling like a wait.
+    static func availabilityExpand(reduceMotion: Bool) -> Animation {
+        reduceMotion ? easeOut(duration: 0.15) : easeDrawer(duration: 0.28)
+    }
+
+    static func availabilityExpandTransition(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .modifier(
+            active: GlassUnfurlModifier(progress: 0),
+            identity: GlassUnfurlModifier(progress: 1)
+        )
+    }
+
+    /// Same unfurl as the island list, without a shadow left on the open card.
+    static func plainAvailabilityExpandTransition(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .modifier(
+            active: GlassUnfurlModifier(progress: 0, castsShadow: false),
+            identity: GlassUnfurlModifier(progress: 1, castsShadow: false)
+        )
     }
 
     /// Menu that grows out of its trigger. 200ms ease-out; reduced motion keeps the fade only.
@@ -285,6 +333,59 @@ struct VelvetProviderCrossfade<ID: Hashable, Content: View>: View {
                 .id(id)
         }
         .animation(VelvetMotion.contentCrossfade(reduceMotion: reduceMotion), value: id)
+    }
+}
+
+/// The availability card unfurling from a capsule under the pill into its full glass panel.
+private struct GlassUnfurlShape: Shape {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let t = min(max(progress, 0), 1)
+        let collapsedWidth = min(160, rect.width)
+        let collapsedHeight = min(44, rect.height)
+        let width = collapsedWidth + (rect.width - collapsedWidth) * t
+        let height = collapsedHeight + (rect.height - collapsedHeight) * t
+        let capsuleRadius = height / 2
+        let radius = min(capsuleRadius + (32 - capsuleRadius) * t, height / 2)
+        let frame = CGRect(
+            x: rect.minX + (rect.width - width) / 2,
+            y: rect.minY,
+            width: width,
+            height: height
+        )
+        return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: frame)
+    }
+}
+
+private struct GlassUnfurlModifier: ViewModifier, Animatable {
+    var progress: CGFloat
+    var castsShadow = true
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let t = min(max(progress, 0), 1)
+        let shape = GlassUnfurlShape(progress: t)
+        let blur = CGFloat(max(0, (0.65 - t) / 0.65)) * 4
+        content
+            .mask(shape)
+            .shadow(
+                color: .black.opacity(castsShadow ? 0.12 : 0),
+                radius: castsShadow ? 20 : 0,
+                y: castsShadow ? 8 : 0
+            )
+            .blur(radius: blur)
+            .opacity(min(1, 0.55 + t * 1.2))
+            .offset(y: (1 - t) * -8)
     }
 }
 

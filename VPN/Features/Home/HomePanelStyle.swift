@@ -11,8 +11,8 @@ enum VPNPanelStyle: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .island: "Floating island"
-        case .sheet: "System sheet"
+        case .island: ui("Floating island")
+        case .sheet: ui("System sheet")
         }
     }
 }

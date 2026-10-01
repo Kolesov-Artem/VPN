@@ -2,39 +2,39 @@ import Foundation
 
 /// Literal copy from Figma section 550:19337 «Velvet + others VPNs».
 enum VPNFigmaSection550Copy {
-    static let mapToastTitle = "New VPN added"
-    static let allProvidersUsageFilter = "All providers usage"
+    static var mapToastTitle: String { ui("New VPN added") }
+    static var allProvidersUsageFilter: String { ui("All providers usage") }
 
     static func providerUsageFilter(providerName: String) -> String {
         "\(providerName) usage"
     }
 
-    static let expandedConnectedTitle = "Connected"
+    static var expandedConnectedTitle: String { ui("Connected") }
 
     static func expandedConnectedSubtitle(presetTitle: String, providerName: String) -> String {
-        "Fastest, \(presetTitle), \(providerName)"
+        uiFormat("Smart, %@, %@", presetTitle, providerName)
     }
 
-    static let activeSubscriptionLabel = "Active subscription"
-    static let allSubscriptionsLabel = "All subscriptions"
-    static let switchToTitle = "Switch to"
-    static let seeAllSubscriptions = "See all subscriptions"
-    static let subscriptionsTitle = "Subscriptions"
-    static let expiredSubscriptionsHeader = "Expired"
-    static let updateSubscriptionAction = "Update"
-    static let buyTrafficAction = "Buy traffic"
-    static let deleteSubscriptionAction = "Delete"
+    static var activeSubscriptionLabel: String { ui("Active subscription") }
+    static var allSubscriptionsLabel: String { ui("All subscriptions") }
+    static var switchToTitle: String { ui("Switch to") }
+    static var seeAllSubscriptions: String { ui("See all subscriptions") }
+    static var subscriptionsTitle: String { ui("Subscriptions") }
+    static var expiredSubscriptionsHeader: String { ui("Expired") }
+    static var updateSubscriptionAction: String { ui("Update") }
+    static var buyTrafficAction: String { ui("Buy traffic") }
+    static var deleteSubscriptionAction: String { ui("Delete") }
 
-    static let collapsedFastestTitle = "Fastest"
-    static let collapsedConnectedSmartAutoSubtitle = "Smart-Auto"
+    static var collapsedFastestTitle: String { ui("Smart") }
+    static var collapsedConnectedSmartAutoSubtitle: String { ui("Smart-Auto") }
     static let smartAutoTrafficSubtitle = "Smart-Auto, 1 TB left"
-    static let presetsSectionTitle = "Pressets"
-    static let locationSearchPlaceholder = "Locaion"
-    static let sessionUsageDelta = "-0.2% this session"
-    static let wifiTrafficLeading = "73% basic traffic left"
-    static let lteTrafficLeading = "63% LTE traffic left"
+    static var presetsSectionTitle: String { ui("Pressets") }
+    static var locationSearchPlaceholder: String { ui("Locaion") }
+    static var sessionUsageDelta: String { ui("-0.2% this session") }
+    static var wifiTrafficLeading: String { ui("73% basic traffic left") }
+    static var lteTrafficLeading: String { ui("63% LTE traffic left") }
     static let lteTrafficFraction = 0.63
-    static let lteSessionDelta = "-0.2% this session"
+    static var lteSessionDelta: String { ui("-0.2% this session") }
 
     static let velvetProviderMessage = """
     ⚠️ Глушат LTE — перебери все LTE-конфиги до рабочего.
@@ -47,17 +47,17 @@ enum VPNFigmaSection550Copy {
 
     static func presetCardSubtitle(for choice: VPNUseCaseMenuChoice) -> String {
         switch choice {
-        case .smart: "Auto-choose the best option"
-        case .watchAndPlay: "Best for ITV, Disney+, Netflix"
-        case .workAndBrowse: "Low latency game servers"
+        case .smart: ui("Auto-choose the best option")
+        case .watchAndPlay: ui("Best for ITV, Disney+, Netflix")
+        case .workAndBrowse: ui("Low latency game servers")
         default: choice.cardSubtitle
         }
     }
 
     static func presetCardTitle(for choice: VPNUseCaseMenuChoice) -> String {
         switch choice {
-        case .watchAndPlay: "Stream"
-        case .workAndBrowse: "Gaming"
+        case .watchAndPlay: ui("Stream")
+        case .workAndBrowse: ui("Gaming")
         default: choice.title
         }
     }
@@ -66,21 +66,21 @@ enum VPNFigmaSection550Copy {
         [.smart, .watchAndPlay, .workAndBrowse]
     }
 
-    static let activeProviderBadge = "Active"
-    static let subscriptionExpiredBadge = "Subscription expired"
+    static var activeProviderBadge: String { ui("Active") }
+    static var subscriptionExpiredBadge: String { ui("Subscription expired") }
 
     static func makeMainVPNPromptTitle(providerName: String) -> String {
         "Use \(providerName) as your main VPN?"
     }
 
-    static let makeMainVPNPromptMessage = "It will be used for Connect, presets, and locations."
-    static let makeMainVPNConfirm = "Use as main"
-    static let makeMainVPNDecline = "Not now"
+    static var makeMainVPNPromptMessage: String { ui("It will be used for Connect, presets, and locations.") }
+    static var makeMainVPNConfirm: String { ui("Use as main") }
+    static var makeMainVPNDecline: String { ui("Not now") }
 
-    static let providerSettingsStatusActive = "Active until 1 Oct 2026"
-    static let providerSettingsLastUpdated = "1 Sep 2026, 23:28"
-    static let providerSettingsAutoConnectValue = "Wi-Fi only"
-    static let goToProviderSite = "Go to provider site"
+    static var providerSettingsStatusActive: String { ui("Active until 1 Oct 2026") }
+    static var providerSettingsLastUpdated: String { ui("1 Sep 2026, 23:28") }
+    static var providerSettingsAutoConnectValue: String { ui("Wi-Fi only") }
+    static var goToProviderSite: String { ui("Go to provider site") }
 
     /// Provider settings alert block (without LTE quota line).
     static let providerSettingsAlertMessage = """

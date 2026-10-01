@@ -7,7 +7,7 @@ private struct VelvetPromoBannerFooter: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Text("Or try Velvet VPN, it's better")
+                Text(ui("Or try Velvet VPN, it's better"))
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
 
@@ -21,8 +21,8 @@ private struct VelvetPromoBannerFooter: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Or try Velvet VPN, it's better")
-        .accessibilityHint("Opens the Velvet VPN website")
+        .accessibilityLabel(ui("Or try Velvet VPN, it's better"))
+        .accessibilityHint(ui("Opens the Velvet VPN website"))
     }
 }
 

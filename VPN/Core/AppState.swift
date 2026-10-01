@@ -29,31 +29,31 @@ struct VPNSelectionMismatch: Equatable {
     var collapsedTitle: String {
         switch reason {
         case .presetUnavailable(let job):
-            "\(job.title) isn't available"
+            uiFormat("%@ isn't available", job.title)
         case .scopedProviderMissing:
-            "Network not available"
+            ui("Network not available")
         }
     }
 
     var collapsedSubtitle: String {
         switch reason {
         case .presetUnavailable(let job):
-            "\(providerName) doesn't cover \(job.title.lowercased()) servers"
+            uiFormat("%@ doesn't cover %@ servers", providerName, job.title)
         case .scopedProviderMissing(let scopeLabel):
-            "\(scopeLabel) isn't in your networks"
+            uiFormat("%@ isn't in your networks", scopeLabel)
         }
     }
 
     var bannerMessage: String {
         switch reason {
         case .presetUnavailable(let job) where job == .mobileLTE:
-            "\(providerName) doesn't offer LTE servers for this preset"
+            uiFormat("%@ doesn't offer LTE servers for this preset", providerName)
         case .presetUnavailable(let job) where job == .whitelistForeign:
-            "\(providerName) doesn't support whitelist routing for this preset"
+            uiFormat("%@ doesn't support whitelist routing for this preset", providerName)
         case .presetUnavailable:
-            "\(providerName) doesn't have servers that match this preset"
+            uiFormat("%@ doesn't have servers that match this preset", providerName)
         case .scopedProviderMissing(let scopeLabel):
-            "\(scopeLabel) isn't available through \(providerName)"
+            uiFormat("%@ isn't available through %@", scopeLabel, providerName)
         }
     }
 
@@ -75,7 +75,7 @@ enum VPNConnectionFailure: Equatable {
     var displayMessage: String {
         switch self {
         case .network(let message):
-            message
+            ui(message)
         case .selectionMismatch(let info):
             info.collapsedSubtitle
         }
@@ -146,12 +146,20 @@ struct VPNLocation: Identifiable, Equatable, Codable {
         case lte
         case standard
 
-        var title: String {
+        /// English token stored in favourites. Display copy goes through `title`.
+        var storageTitle: String {
             switch self {
-            case .smart: "Smart"
-            case .lte: "LTE"
-            case .standard: "Standard"
+            case .smart:
+                return "Smart"
+            case .lte:
+                return "LTE"
+            case .standard:
+                return "Standard"
             }
+        }
+
+        var title: String {
+            ui(storageTitle)
         }
     }
 
@@ -190,7 +198,8 @@ struct VPNLocation: Identifiable, Equatable, Codable {
     }
 
     var subtitle: String {
-        kind == .smart ? city : "\(city) · \(kind.title)"
+        let place = ui(city)
+        return kind == .smart ? place : "\(place) · \(kind.title)"
     }
 
     var pingLabel: String {
@@ -206,13 +215,13 @@ struct VPNLocation: Identifiable, Equatable, Codable {
     }
 
     var searchText: String {
-        "\(name) \(city) \(kind.title)"
+        "\(uiVariants(name)) \(uiVariants(city)) \(uiVariants(kind.storageTitle))"
     }
 
     /// Stable across launches, unlike the prototype UUID, so favourites can
     /// live in AppStorage without changing the public server model.
     var persistenceKey: String {
-        "\(name)|\(city)|\(kind.title)"
+        "\(name)|\(city)|\(kind.storageTitle)"
     }
 }
 
@@ -239,9 +248,9 @@ enum VPNLocationFilter: CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: "All types"
-        case .lte: "LTE"
-        case .standard: "Standard"
+        case .all: ui("All types")
+        case .lte: ui("LTE")
+        case .standard: ui("Standard")
         }
     }
 
@@ -267,8 +276,8 @@ enum VPNLocationSort: CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .fastest: "Fastest first"
-        case .country: "Country A–Z"
+        case .fastest: ui("Fastest first")
+        case .country: ui("Country A–Z")
         }
     }
 }
@@ -296,8 +305,8 @@ struct VPNLocationQuery: Equatable {
             switch self {
             case .filter(let filter): filter.title
             case .sort(let sort): sort.title
-            case .fastOnly: "Under \(VPNLocation.fastPingThreshold) ms"
-            case .provider(_, let name): "Provider: \(name)"
+            case .fastOnly: uiFormat("Under %lld ms", VPNLocation.fastPingThreshold)
+            case .provider(_, let name): uiFormat("Provider: %@", name)
             }
         }
     }
@@ -467,7 +476,7 @@ extension VPNLocation {
     }
 
     static let samples = [
-        VPNLocation(name: "Smart — Auto", city: "Fastest available server", flag: "✨", kind: .smart, ping: 24),
+        VPNLocation(name: "Smart — Auto", city: "Smart", flag: "✨", kind: .smart, ping: 24),
         VPNLocation(name: "Russia", city: "Moscow", flag: "🇷🇺", kind: .lte, ping: 18, coordinate: GeoCoordinate(latitude: 55.7558, longitude: 37.6173)),
         VPNLocation(name: "Russia", city: "Saint Petersburg", flag: "🇷🇺", kind: .standard, ping: 26, coordinate: GeoCoordinate(latitude: 59.9311, longitude: 30.3609)),
         VPNLocation(name: "Russia", city: "Yekaterinburg", flag: "🇷🇺", kind: .lte, ping: 34, coordinate: GeoCoordinate(latitude: 56.8389, longitude: 60.6057)),

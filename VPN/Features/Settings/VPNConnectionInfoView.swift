@@ -59,36 +59,36 @@ struct VPNConnectionInfoView: View {
 
                 if let providerMessage, !providerMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Section {
-                        Text(providerMessage)
+                        Text(ui(providerMessage))
                             .font(.subheadline)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
-                Section("Session") {
-                    LabeledContent("Status", value: resolvedConnection == nil ? "Disconnected" : "Connected")
-                    LabeledContent("Duration", value: durationText)
-                    LabeledContent("Location", value: sessionLocationText)
-                    LabeledContent("IP address", value: mockPublicIP)
-                    LabeledContent("Session usage", value: sessionUsageText)
-                    LabeledContent("Ping", value: resolvedConnection == nil ? "—" : "\(pingMs) ms")
+                Section(ui("Session")) {
+                    LabeledContent(ui("Status"), value: resolvedConnection == nil ? "Disconnected" : "Connected")
+                    LabeledContent(ui("Duration"), value: durationText)
+                    LabeledContent(ui("Location"), value: sessionLocationText)
+                    LabeledContent(ui("IP address"), value: mockPublicIP)
+                    LabeledContent(ui("Session usage"), value: sessionUsageText)
+                    LabeledContent(ui("Ping"), value: resolvedConnection == nil ? "—" : "\(pingMs) ms")
                 }
 
                 if resolvedConnection != nil {
-                    Section("Route") {
-                        LabeledContent("Provider", value: resolvedConnection?.provider.name ?? "—")
-                        LabeledContent("Protocol", value: VPNConnectionRouteDetails.protocolLabel)
-                        LabeledContent("Server", value: resolvedConnection.map(VPNConnectionRouteDetails.serverID(for:)) ?? "—")
-                        LabeledContent("Port", value: VPNConnectionRouteDetails.portLabel)
-                        LabeledContent("Encryption", value: VPNConnectionRouteDetails.encryptionLabel)
-                        LabeledContent("DNS", value: VPNConnectionRouteDetails.dnsLabel)
+                    Section(ui("Route")) {
+                        LabeledContent(ui("Provider"), value: resolvedConnection?.provider.name ?? "—")
+                        LabeledContent(ui("Protocol"), value: VPNConnectionRouteDetails.protocolLabel)
+                        LabeledContent(ui("Server"), value: resolvedConnection.map(VPNConnectionRouteDetails.serverID(for:)) ?? "—")
+                        LabeledContent(ui("Port"), value: VPNConnectionRouteDetails.portLabel)
+                        LabeledContent(ui("Encryption"), value: VPNConnectionRouteDetails.encryptionLabel)
+                        LabeledContent(ui("DNS"), value: VPNConnectionRouteDetails.dnsLabel)
 
                         Button {
                             showsHandshakeInfo = true
                         } label: {
                             HStack {
-                                Text("Handshake")
+                                Text(ui("Handshake"))
                                     .foregroundStyle(.primary)
                                 Spacer(minLength: 8)
                                 Text(VPNConnectionRouteDetails.handshakeLabel(since: connectedAt))
@@ -101,24 +101,24 @@ struct VPNConnectionInfoView: View {
                         .buttonStyle(.plain)
 
                         VPNConfirmedToggle(
-                            title: "Kill Switch",
+                            title: ui("Kill Switch"),
                             isOn: $killSwitch,
                             confirmation: VPNSettingsConfirmations.killSwitch
                         )
                     }
                 }
             }
-            .navigationTitle(usesRelease1NavigationTitle ? "VPN info" : "Connection info")
+            .navigationTitle(usesRelease1NavigationTitle ? ui("VPN info") : ui("Connection info"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
-            .alert("Handshake", isPresented: $showsHandshakeInfo) {
-                Button("OK", role: .cancel) {}
+            .alert(ui("Handshake"), isPresented: $showsHandshakeInfo) {
+                Button(ui("OK"), role: .cancel) {}
             } message: {
-                Text("WireGuard last rekeyed \(VPNConnectionRouteDetails.handshakeLabel(since: connectedAt).lowercased()).")
+                Text(uiFormat("WireGuard last rekeyed %@.", VPNConnectionRouteDetails.handshakeLabel(since: connectedAt)))
             }
         }
     }
@@ -147,6 +147,6 @@ enum VPNConnectionRouteDetails {
     static func handshakeLabel(since connectedAt: Date?) -> String {
         guard let connectedAt else { return "—" }
         let minutes = max(1, Int(Date.now.timeIntervalSince(connectedAt) / 60) % 5 + 1)
-        return "\(minutes) min ago"
+        return uiFormat("%lld min ago", minutes)
     }
 }

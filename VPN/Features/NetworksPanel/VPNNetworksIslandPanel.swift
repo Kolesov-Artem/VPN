@@ -21,6 +21,10 @@ struct VPNNetworksIslandPanel: View {
     let safeAreaBottom: CGFloat
     let safeAreaTop: CGFloat
     var detentMode: VPNPanelDetentMode = .stepped
+    /// Collapsed card offers subscription and location before connect.
+    var usesMenuCollapsedChrome: Bool = false
+
+    static let locationsAnchor = "island.locations"
 
     private var providers: [VPNProvider] { providerStore.providers }
 
@@ -45,6 +49,8 @@ struct VPNNetworksIslandPanel: View {
     @State private var showsSubscriptionSettings = false
     @State private var providerContentLoadingID: UUID?
     @State private var providerLoadTask: Task<Void, Never>?
+    @State private var connectTask: Task<Void, Never>?
+    @State private var pendingLocationScroll = false
 
     @AppStorage(VPNFavouriteLocationsStore.storageKey) private var storedFavourites = ""
     @AppStorage(VPNFavouriteLocationsStore.seededKey) private var didSeedFavourites = false
@@ -91,7 +97,7 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var figmaSearchPlaceholder: String {
-        VPNReleaseProfile.isRelease1 ? VPNFigmaSection550Copy.locationSearchPlaceholder : "Country, city or type"
+        VPNReleaseProfile.isRelease1 ? VPNFigmaSection550Copy.locationSearchPlaceholder : ui("Country, city or type")
     }
 
     /// Release 1: always show the manually selected provider, not an icon stack.
@@ -147,6 +153,14 @@ struct VPNNetworksIslandPanel: View {
         providerContentLoadingID != nil
     }
 
+    private var isLocationSwitching: Bool {
+        isSwitchingServer && (connectionState == .connected || connectionState == .connecting)
+    }
+
+    private var isPanelContentLoading: Bool {
+        isProviderContentLoading || isLocationSwitching
+    }
+
     /// Name shown while a switch is still loading. Stats stay hidden until it finishes.
     private var chromeProvider: VPNProvider {
         if let providerContentLoadingID,
@@ -197,11 +211,11 @@ struct VPNNetworksIslandPanel: View {
                 VPNProviderEditView(providerStore: providerStore, providerID: editProviderID)
             }
         }
-        .alert("Subscriptions updated", isPresented: Binding(
+        .alert(ui("Subscriptions updated"), isPresented: Binding(
             get: { updateToastMessage != nil },
             set: { if !$0 { updateToastMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(ui("OK"), role: .cancel) {}
         } message: {
             Text(updateToastMessage ?? "")
         }
@@ -258,15 +272,14 @@ struct VPNNetworksIslandPanel: View {
             }
         }
         .animation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion), value: connectionNoticeMessage)
-        .confirmationDialog(
-            "Delete this configuration?",
+        .confirmationDialog(ui("Delete this configuration?"),
             isPresented: $showsDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button(ui("Delete"), role: .destructive) {
                 deletePendingProvider()
             }
-            Button("Cancel", role: .cancel) {}
+            Button(ui("Cancel"), role: .cancel) {}
         } message: {
             if let provider = providerStore.providerPendingDeletion(from: resolvedConnection) {
                 Text("\(provider.name) will be removed from Networks and Smart-Auto.")
@@ -288,7 +301,10 @@ struct VPNNetworksIslandPanel: View {
             .onChange(of: query.text) { _, _ in
                 expandPanelForSearchIfNeeded(isFocused: searchIsFocused)
             }
-            .onAppear(perform: seedFavouritesIfNeeded)
+            .onChange(of: locationSelection) { _, _ in
+                guard connectionState == .connected else { return }
+                beginLocationSwitch()
+            }
             .onChange(of: shouldAutoConnect) { _, value in
                 guard value else { return }
                 shouldAutoConnect = false
@@ -310,6 +326,7 @@ struct VPNNetworksIslandPanel: View {
             compactBarTitle: panelCompactBarTitle,
             detentMode: detentMode,
             showsFavouriteStrip: !favouriteEntries.isEmpty,
+            usesMenuCollapsedChrome: usesMenuCollapsedChrome,
             fadesScrollContentAsGroup: false,
             onDismissSearch: { searchIsFocused = false }
         ) { context in
@@ -334,7 +351,7 @@ struct VPNNetworksIslandPanel: View {
                 safeAreaBottom: searchBottomInset
             )
         } favouriteDock: {
-            favouriteLocationsStrip
+            dockedFavouriteStrip
         }
     }
 
@@ -405,7 +422,7 @@ struct VPNNetworksIslandPanel: View {
                     providerStore: providerStore
                 )
                 .velvetLoadingShimmer(
-                    isActive: isProviderContentLoading,
+                    isActive: isPanelContentLoading,
                     reduceMotion: reduceMotion,
                     index: 0
                 )
@@ -422,14 +439,14 @@ struct VPNNetworksIslandPanel: View {
             }
             return live.dataUsedText
         case .connecting:
-            return "Connecting…"
+            return ui("Connecting…")
         case .disconnected:
-            return needsSubscriptionAction ? "Renew to connect" : "Not connected"
+            return needsSubscriptionAction ? ui("Renew to connect") : ui("Not connected")
         case .failed(let failure):
             if case .selectionMismatch(let mismatch) = failure {
                 return mismatch.collapsedSubtitle
             }
-            return needsSubscriptionAction ? "Renew to connect" : "Try another server"
+            return needsSubscriptionAction ? ui("Renew to connect") : ui("Try another server")
         }
     }
 
@@ -473,6 +490,11 @@ struct VPNNetworksIslandPanel: View {
             .padding(.horizontal, VelvetMetrics.rowHorizontalPadding * context.layout.revealProgress)
             .padding(.bottom, VelvetMetrics.collapsedHeaderBottomPadding * context.layout.revealProgress)
             .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
+            .velvetLoadingShimmer(
+                isActive: isLocationSwitching && context.layout.revealProgress > 0.08,
+                reduceMotion: reduceMotion,
+                index: 0
+            )
     }
 
     @ViewBuilder
@@ -487,6 +509,70 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private func collapsedIslandHeader(context: BottomPanelCurtainContext) -> some View {
+        if usesMenuCollapsedChrome {
+            return AnyView(menuCollapsedHeader)
+        }
+        return AnyView(standardCollapsedHeader(context: context))
+    }
+
+    private var menuCollapsedHeader: some View {
+        VPNIslandMenuCollapsedHeader(
+            status: menuStatusText,
+            provider: headerProvider,
+            providerName: menuProviderName,
+            locationTitle: menuLocationTitle,
+            locationFlag: menuLocationFlag,
+            onProvider: { setProviderSwitchPresented(true) },
+            onLocation: openLocationsFromCollapsedIsland
+        )
+    }
+
+    private var menuStatusText: String {
+        if isSwitchingServer { return ui("Switching server…") }
+        switch connectionState {
+        case .connected:
+            return uiFormat("Connected to %@", menuLocationTitle)
+        case .connecting:
+            return ui("Connecting…")
+        case .disconnected:
+            return ui("Not connected")
+        case .failed(let failure):
+            return failure.displayMessage
+        }
+    }
+
+    private var menuProviderName: String {
+        if showsAllSubscriptionsCatalog {
+            return ui("All subscriptions")
+        }
+        return headerProvider.catalogDisplayName.withoutEmoji
+    }
+
+    private var menuLocationTitle: String {
+        ui(activePlaceName.withoutEmoji.replacingOccurrences(of: "SMART-", with: ""))
+    }
+
+    private var menuLocationFlag: String? {
+        switch locationSelection {
+        case let .manual(location, _):
+            return location.flag
+        case .smartAuto, .smartJob:
+            if connectionState == .connected || connectionState == .connecting {
+                return resolvedConnection?.location.flag
+            }
+            return nil
+        }
+    }
+
+    private func openLocationsFromCollapsedIsland() {
+        pendingLocationScroll = true
+        searchIsFocused = false
+        withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
+            position = .expanded
+        }
+    }
+
+    private func standardCollapsedHeader(context: BottomPanelCurtainContext) -> some View {
         VPNIslandCollapsedHeader(
             provider: headerProvider,
             title: collapsedHeaderTitle,
@@ -507,19 +593,13 @@ struct VPNNetworksIslandPanel: View {
 
     private func expandedNetworksHeader(context: BottomPanelCurtainContext) -> some View {
         HStack(spacing: 10) {
-            if showsMultiProviderIconStack {
-                VPNProviderIconStack(providers: providers)
-            } else {
-                VPNProviderBrandLogo(provider: headerProvider)
-            }
-
             VStack(alignment: .leading, spacing: 2) {
-                Text(expandedHeaderTitle)
+                Text(expandedHeaderTitle.withoutEmoji)
                     .font(VelvetTypography.panelStatusTitle)
                     .foregroundStyle(VelvetTheme.mainTextDark)
                     .lineLimit(1)
 
-                Text(expandedHeaderSubtitle)
+                Text(expandedHeaderSubtitle.withoutEmoji)
                     .font(VelvetTypography.panelStatusSubtitle)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -551,7 +631,7 @@ struct VPNNetworksIslandPanel: View {
             }
             .buttonStyle(PressScaleButtonStyle())
             .fixedSize()
-            .accessibilityLabel(context.position == .island ? "Expand panel" : "Collapse panel")
+            .accessibilityLabel(context.position == .island ? ui("Expand panel") : ui("Collapse panel"))
         }
         .frame(height: VelvetMetrics.expandedPanelHeaderHeight)
     }
@@ -590,7 +670,7 @@ struct VPNNetworksIslandPanel: View {
                         selectionSource: selectionSource,
                         usesFigmaSection550Copy: VPNReleaseProfile.isRelease1,
                         staggerIndexOffset: 1,
-                        hidesForLoading: isProviderContentLoading,
+                        hidesForLoading: isPanelContentLoading,
                         reduceMotion: reduceMotion,
                         panelRevealProgress: reveal,
                         panelStaggerIndexOffset: presetsHeaderIndex,
@@ -600,6 +680,7 @@ struct VPNNetworksIslandPanel: View {
             }
 
             paddedSection(spacing: VelvetMetrics.panelSectionHeaderSpacing) {
+                LocationListScrollRequest(isPending: $pendingLocationScroll)
                 if query.isDefault, !favouriteEntries.isEmpty {
                     favouriteLocationsStrip
                         .velvetPanelRowReveal(
@@ -608,16 +689,28 @@ struct VPNNetworksIslandPanel: View {
                             reduceMotion: reduceMotion
                         )
                 }
-                VPNPanelSectionHeader(title: "All locations")
-                    .velvetPanelRowReveal(
-                        progress: reveal,
-                        index: locationsHeaderIndex,
-                        reduceMotion: reduceMotion
-                    )
+                if !usesMenuCollapsedChrome {
+                    VPNPanelSectionHeader(title: ui("All locations"))
+                        .velvetPanelRowReveal(
+                            progress: reveal,
+                            index: locationsHeaderIndex,
+                            reduceMotion: reduceMotion
+                        )
+                }
                 allLocationsCard(
                     panelRevealProgress: reveal,
                     panelStaggerIndexOffset: locationsHeaderIndex + 1
                 )
+            }
+            .background {
+                if usesMenuCollapsedChrome {
+                    Color(.systemGroupedBackground)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                PanelScrollAnchor(name: Self.locationsAnchor)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
             }
         }
         .padding(.top, 4)
@@ -644,7 +737,7 @@ struct VPNNetworksIslandPanel: View {
         if showsAllSubscriptionsCatalog {
             return VPNFigmaSection550Copy.allSubscriptionsLabel
         }
-        return chromeProvider.catalogDisplayName
+        return chromeProvider.catalogDisplayName.withoutEmoji
     }
 
     private var activeSubscriptionSubtitle: String? {
@@ -704,7 +797,12 @@ struct VPNNetworksIslandPanel: View {
     private func applySwitchedProvider(id: UUID) {
         providerStore.setActiveProvider(id: id)
         let scope = VPNProviderScope.provider(id)
-        locationSelection = selectionMoved(locationSelection, to: scope)
+        if let provider = providers.first(where: { $0.id == id }), provider.includesPresets {
+            locationSelection = .smartAuto(scope: scope)
+            selectionSource = .useCase(.smart)
+        } else {
+            locationSelection = selectionMoved(locationSelection, to: scope)
+        }
         guard connectionState == .connected else { return }
         guard let resolved = VPNConnectionPlanner.resolve(
             providers: providers,
@@ -766,13 +864,13 @@ struct VPNNetworksIslandPanel: View {
 
     /// How that place was chosen, plus the subscription it belongs to.
     private var activeModeCaption: String {
-        let providerName = (resolvedConnection?.provider ?? chromeProvider).catalogDisplayName
+        let providerName = (resolvedConnection?.provider ?? chromeProvider).catalogDisplayName.withoutEmoji
         switch locationSelection {
         case .smartAuto:
             if connectionState == .disconnected {
                 return VPNFigmaSection550Copy.smartAutoTrafficSubtitle
             }
-            return "Smart · \(providerName)"
+            return uiFormat("Smart · %@", providerName)
         case let .smartJob(job, _):
             return "\(job.title) · \(providerName)"
         case let .manual(location, _):
@@ -822,7 +920,7 @@ struct VPNNetworksIslandPanel: View {
             }
             .buttonStyle(PressScaleButtonStyle())
             .fixedSize()
-            .accessibilityLabel(context.position == .island ? "Expand panel" : "Collapse panel")
+            .accessibilityLabel(context.position == .island ? ui("Expand panel") : ui("Collapse panel"))
         }
         .frame(height: VelvetMetrics.expandedPanelHeaderHeight)
     }
@@ -834,7 +932,7 @@ struct VPNNetworksIslandPanel: View {
         guard displayProvider.showsDetailMessage else { return nil }
         let fraction = min(max(live.usageFraction, 0), 1)
         let percent = Int((fraction * 100).rounded())
-        return "\(percent)% basic traffic left"
+        return uiFormat("%lld%% basic traffic left", percent)
     }
 
     private var connectionInfoLTEUsageBar: ConnectionStatsStrip.SupplementalUsageBar? {
@@ -882,9 +980,19 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var favouriteLocationsStrip: some View {
+        favouriteStrip(horizontalInset: 0)
+    }
+
+    /// Full-width row under the card. Inset keeps the title lined up with the island.
+    private var dockedFavouriteStrip: some View {
+        favouriteStrip(horizontalInset: VelvetTheme.islandHorizontalInset)
+    }
+
+    private func favouriteStrip(horizontalInset: CGFloat) -> some View {
         VPNFavouriteLocationsStrip(
             entries: favouriteEntries,
             selectedID: selectedFavouriteID,
+            horizontalInset: horizontalInset,
             onSelect: connectFavourite,
             onRemove: removeFavourite
         )
@@ -909,10 +1017,27 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private func connectFavourite(_ entry: VPNFavouriteLocationEntry) {
-        guard let provider = providers.first(where: { $0.id == entry.providerID }),
-              let location = provider.servers.first(where: { $0.persistenceKey == entry.persistenceKey })
-        else { return }
-        connectManualLocation(VPNNetworkLocation(location: location, provider: provider))
+        guard let network = networkLocation(for: entry) else { return }
+        connectManualLocation(network)
+    }
+
+    private func networkLocation(for entry: VPNFavouriteLocationEntry) -> VPNNetworkLocation? {
+        if let provider = providers.first(where: { $0.id == entry.providerID }),
+           let location = provider.servers.first(where: { $0.persistenceKey == entry.persistenceKey }) {
+            return VPNNetworkLocation(location: location, provider: provider)
+        }
+
+        for provider in providers where provider.status.isActive {
+            if let location = provider.servers.first(where: { $0.persistenceKey == entry.persistenceKey }) {
+                return VPNNetworkLocation(location: location, provider: provider)
+            }
+            if let location = provider.servers.first(where: {
+                $0.name == entry.name && $0.city == entry.city && $0.kind != .smart
+            }) {
+                return VPNNetworkLocation(location: location, provider: provider)
+            }
+        }
+        return nil
     }
 
     private func allLocationsCard(
@@ -926,12 +1051,15 @@ struct VPNNetworksIslandPanel: View {
             query: $query,
             pingResults: pingResults,
             pingingIDs: pingingIDs,
-            hidesForLoading: isProviderContentLoading,
+            hidesForLoading: isPanelContentLoading,
             staggerIndexOffset: showsPresets ? 4 : 1,
             reduceMotion: reduceMotion,
             panelRevealProgress: panelRevealProgress,
             panelStaggerIndexOffset: panelStaggerIndexOffset,
             favouriteIDs: Set(favouriteEntries.map(\.id)),
+            showsPlate: !usesMenuCollapsedChrome,
+            groupsAsPlates: usesMenuCollapsedChrome,
+            prominentSectionHeaders: usesMenuCollapsedChrome,
             onSmartLocation: connectSmartLocation,
             onManualLocation: connectManualLocation,
             onToggleFavourite: toggleFavourite
@@ -947,6 +1075,7 @@ struct VPNNetworksIslandPanel: View {
                 if case .disconnected = connectionState { return false }
                 return true
             }(),
+            isBusy: isLocationSwitching,
             action: handleConnectionTap
         )
         .animation(VelvetMotion.connectionState(reduceMotion: reduceMotion), value: connectionState)
@@ -987,12 +1116,12 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var islandModeSubtitle: String {
-        if isSwitchingServer { return "Switching server…" }
+        if isSwitchingServer { return ui("Switching server…") }
         switch connectionState {
         case .connected:
             return resolvedConnection?.location.name ?? selectedLocation.name
         case .connecting:
-            return "Connecting…"
+            return ui("Connecting…")
         case .failed(let failure):
             return failure.displayMessage
         case .disconnected:
@@ -1012,7 +1141,7 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private var collapsedConnectedLocationTitle: String {
-        activePlaceName
+        uiPlace(activePlaceName)
     }
 
     private var collapsedHeaderTitle: String {
@@ -1020,38 +1149,39 @@ struct VPNNetworksIslandPanel: View {
         case .connected:
             return collapsedConnectedLocationTitle
         case .connecting:
-            return activePlaceName
+            return uiPlace(activePlaceName)
         case .failed(let failure):
             if needsSubscriptionAction {
-                return displayProvider.status == .expired ? "Subscription expired" : "No active VPN"
+                return displayProvider.status == .expired ? ui("Subscription expired") : ui("No active VPN")
             }
             if case .selectionMismatch(let mismatch) = failure {
                 return mismatch.collapsedTitle
             }
-            return "Couldn't connect"
+            return ui("Couldn't connect")
         case .disconnected:
             if needsSubscriptionAction {
-                return displayProvider.status == .expired ? "Subscription expired" : "No active VPN"
+                return displayProvider.status == .expired ? ui("Subscription expired") : ui("No active VPN")
             }
-            return activePlaceName
+            return uiPlace(activePlaceName)
         }
     }
 
     private var collapsedHeaderSubtitle: String {
+        if isSwitchingServer { return ui("Switching server…") }
         if connectionState == .connected || connectionState == .connecting {
             if connectionState == .connecting {
-                return "Connecting…"
+                return ui("Connecting…")
             }
             return activeModeCaption
         }
         if needsSubscriptionAction {
-            return "Renew to connect"
+            return ui("Renew to connect")
         }
         if case .failed(let failure) = connectionState {
             if case .selectionMismatch(let mismatch) = failure {
                 return mismatch.collapsedSubtitle
             }
-            return "Try another server or check settings"
+            return ui("Try another server or check settings")
         }
         if showsFastestMultiCollapsedLayout || isManualSelection {
             return activeModeCaption
@@ -1064,14 +1194,14 @@ struct VPNNetworksIslandPanel: View {
 
     private var expandedHeaderTitle: String {
         if VPNReleaseProfile.isRelease1 {
-            return activePlaceName
+            return uiPlace(activePlaceName)
         }
         if showsMultiProviderHeader,
            connectionState == .disconnected,
            !VPNReleaseProfile.isRelease1 {
             switch locationSelection {
             case .smartAuto, .smartJob:
-                return activeUseCaseChoice?.title ?? "Smart"
+                return activeUseCaseChoice?.title ?? ui("Smart")
             case .manual:
                 return displayProvider.name
             }
@@ -1096,22 +1226,22 @@ struct VPNNetworksIslandPanel: View {
     private var connectionButtonTitle: String {
         switch connectionState {
         case .disconnected:
-            needsSubscriptionAction ? "Renew subscription" : "Connect"
+            needsSubscriptionAction ? ui("Renew subscription") : ui("Connect")
         case .connecting:
             if isSwitchingServer {
-                "Switching server…"
+                ui("Switching server…")
             } else {
-                isFindingBest ? "Finding best connection…" : "Connecting…"
+                isFindingBest ? ui("Finding best connection…") : ui("Connecting…")
             }
         case .connected:
-            "Connected"
+            isSwitchingServer ? ui("Switching server…") : ui("Connected")
         case .failed(let failure):
             if needsSubscriptionAction {
-                "Renew subscription"
+                ui("Renew subscription")
             } else if case .selectionMismatch = failure {
-                "Browse locations"
+                ui("Browse locations")
             } else {
-                "Retry"
+                ui("Retry")
             }
         }
     }
@@ -1168,13 +1298,24 @@ struct VPNNetworksIslandPanel: View {
     }
 
     private func connectWithSelection(_ newSelection: VPNLocationSelection) {
+        if usesMenuCollapsedChrome,
+           connectionState != .connected,
+           connectionState != .connecting {
+            locationSelection = newSelection
+            collapseToIsland()
+            return
+        }
+
         if connectionState == .connected {
             if newSelection == locationSelection { return }
             locationSelection = newSelection
-            resolvedConnection = nil
             collapseToIsland()
-            isSwitchingServer = true
-            handleConnectionTap()
+            return
+        }
+
+        if connectionState == .connecting {
+            locationSelection = newSelection
+            collapseToIsland()
             return
         }
 
@@ -1379,6 +1520,7 @@ struct VPNNetworksIslandPanel: View {
         }
 
         if connectionState == .connected, !isSwitchingServer {
+            connectTask?.cancel()
             withAnimation(VelvetMotion.connectionLayout(reduceMotion: reduceMotion)) {
                 connectionState = .disconnected
                 resolvedConnection = nil
@@ -1407,14 +1549,21 @@ struct VPNNetworksIslandPanel: View {
             return
         }
 
-        withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
-            connectionState = .connecting
-            isFindingBest = !isSwitchingServer
+        connectTask?.cancel()
+
+        if connectionState == .connected, isSwitchingServer {
+            applyResolvedLocation(keepConnected: true)
+            return
         }
 
-        Task { @MainActor in
+        withAnimation(VelvetMotion.connectionState(reduceMotion: reduceMotion)) {
+            connectionState = .connecting
+            isFindingBest = true
+        }
+
+        connectTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(900))
-            guard connectionState == .connecting else { return }
+            guard !Task.isCancelled, connectionState == .connecting else { return }
 
 #if DEBUG
             let shouldFail = VPNDevFlags.connectShouldFail
@@ -1489,13 +1638,99 @@ struct VPNNetworksIslandPanel: View {
             isFindingBest = false
 
             try? await Task.sleep(for: .milliseconds(500))
-            guard connectionState == .connecting else { return }
+            guard !Task.isCancelled, connectionState == .connecting else { return }
 
             withAnimation(VelvetMotion.connectionLayout(reduceMotion: reduceMotion)) {
                 connectionState.completeConnection()
                 isSwitchingServer = false
                 connectedAt = connectedAt ?? .now
             }
+        }
+    }
+
+    /// Stay green while hopping cities. A reconnect flash would read as a wait, not a move.
+    private func applyResolvedLocation(keepConnected: Bool) {
+        var workingSelection = locationSelection
+        var resolved = VPNConnectionPlanner.resolve(
+            providers: providers,
+            selection: workingSelection
+        )
+
+        if resolved == nil,
+           !VPNReleaseProfile.isRelease1,
+           let fallback = VPNConnectionPlanner.smartAutoFallbackSelection(
+               providers: providers,
+               preferredScope: workingSelection.scope,
+               storeScope: providerStore.providerScope
+           ),
+           fallback != workingSelection {
+            workingSelection = fallback
+            locationSelection = fallback
+            selectionSource = .useCase(.smart)
+            resolved = VPNConnectionPlanner.resolve(providers: providers, selection: fallback)
+        }
+
+        guard let resolved else {
+            if let mismatch = VPNConnectionPlanner.diagnoseSelectionFailure(
+                providers: providers,
+                selection: locationSelection
+            ) {
+                presentSelectionMismatch(mismatch)
+            } else {
+                presentNetworkFailure(message: "Try another server")
+            }
+            return
+        }
+
+        locationSelection = workingSelection
+        resolvedConnection = resolved
+        selectedLocation = resolved.location
+        isFindingBest = false
+        isSwitchingServer = false
+        if keepConnected {
+            connectionState = .connected
+            connectedAt = connectedAt ?? .now
+        }
+    }
+
+    /// Keep the green map. Stats and the button wait, so a hop still feels like work.
+    private func beginLocationSwitch() {
+        connectTask?.cancel()
+        isSwitchingServer = true
+        connectTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(720))
+            guard !Task.isCancelled else { return }
+            applyResolvedLocation(keepConnected: true)
+        }
+    }
+}
+
+/// Scrolls the open sheet to the location list after the collapsed location chooser is tapped.
+private struct LocationListScrollRequest: View {
+    @Binding var isPending: Bool
+    @Environment(\.panelScrollViewHandle) private var panelScrollViewHandle
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear(perform: scrollIfNeeded)
+            .onChange(of: isPending) { _, pending in
+                if pending { scrollIfNeeded() }
+            }
+    }
+
+    private func scrollIfNeeded() {
+        guard isPending else { return }
+        let handle = panelScrollViewHandle
+        Task { @MainActor in
+            for _ in 0..<12 {
+                if handle.scrollToAnchor(VPNNetworksIslandPanel.locationsAnchor, animated: true) {
+                    isPending = false
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            isPending = false
         }
     }
 }

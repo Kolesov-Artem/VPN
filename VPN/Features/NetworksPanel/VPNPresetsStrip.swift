@@ -12,7 +12,7 @@ struct VPNPresetsStrip: View {
     let onSelect: (VPNUseCaseMenuChoice) -> Void
 
     private var sectionTitle: String {
-        usesFigmaSection550Copy ? VPNFigmaSection550Copy.presetsSectionTitle : "Presets"
+        usesFigmaSection550Copy ? VPNFigmaSection550Copy.presetsSectionTitle : ui("Presets")
     }
 
     private var choices: [VPNUseCaseMenuChoice] {

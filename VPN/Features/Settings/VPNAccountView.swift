@@ -3,17 +3,27 @@ import SwiftUI
 /// Account screen (traffic chart, support links, about app).
 struct VPNAccountView: View {
     @Bindable var providerStore: VPNProviderStore
+    var showsDismissButton = true
+    /// When the account page is a tab, this leaves that tab. A cover uses dismiss instead.
+    var onBack: (() -> Void)? = nil
     let onOpenProvider: (UUID) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.ru
 
     @State private var showsSupport = false
+    @State private var showsSettings = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
+                    listSection(title: ui("App")) {
+                        accountNavigationRow("Settings") {
+                            showsSettings = true
+                        }
+                    }
                     VPNTrafficUsageCard(providers: providerStore.providers)
                     listSection(title: VPNFigmaSection550Copy.subscriptionsTitle) {
                         NavigationLink {
@@ -38,7 +48,7 @@ struct VPNAccountView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    listSection(title: "Support and bonuses") {
+                    listSection(title: ui("Support and bonuses")) {
                         accountNavigationRow("Invite a friend") {
                             openURL(VelvetTheme.paywallURL)
                         }
@@ -47,8 +57,8 @@ struct VPNAccountView: View {
                             showsSupport = true
                         }
                     }
-                    listSection(title: "About app") {
-                        accountNavigationRow("Language", detail: "English") {}
+                    listSection(title: ui("About app")) {
+                        languageRow
                         accountDivider
                         accountNavigationRow("Terms of use") {
                             openURL(URL(string: "https://velvet.vpn/terms")!)
@@ -59,7 +69,7 @@ struct VPNAccountView: View {
                         }
                     }
 
-                    Text("App version: 1.1")
+                    Text(ui("App version: 1.1"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -69,21 +79,33 @@ struct VPNAccountView: View {
                 .padding(.vertical, 12)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Account")
+            .navigationTitle(ui("Account"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 36, height: 36)
-                            .background(Color(.tertiarySystemFill), in: Circle())
+                if showsDismissButton {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            if let onBack {
+                                onBack()
+                            } else {
+                                dismiss()
+                            }
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 36, height: 36)
+                                .background(Color(.tertiarySystemFill), in: Circle())
+                        }
+                        .accessibilityLabel(ui("Back"))
                     }
-                    .accessibilityLabel("Back")
                 }
+            }
+            .sheet(isPresented: $showsSettings) {
+                HomeSettingsView(providerStore: providerStore)
+                    .id(appLanguage)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showsSupport) {
                 VPNSupportView(providerName: nil)
@@ -109,6 +131,28 @@ struct VPNAccountView: View {
         }
     }
 
+    private var languageRow: some View {
+        Menu {
+            Button("English") { appLanguage = AppLanguage.en }
+            Button("Русский") { appLanguage = AppLanguage.ru }
+        } label: {
+            HStack {
+                Text(ui("Language"))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(appLanguage == AppLanguage.en ? "English" : "Русский")
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.body)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+    }
+
     private var accountDivider: some View {
         Divider().padding(.leading, 16)
     }
@@ -120,11 +164,11 @@ struct VPNAccountView: View {
     ) -> some View {
         Button(action: action) {
             HStack {
-                Text(title)
+                Text(ui(title))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 if let detail {
-                    Text(detail)
+                    Text(ui(detail))
                         .foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.right")

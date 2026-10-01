@@ -13,16 +13,16 @@ struct VPNLogsView: View {
                     .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Logs")
+            .navigationTitle(ui("Logs"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Clear") {
+                    Button(ui("Clear")) {
                         logsStore.clear()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
         }

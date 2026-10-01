@@ -1,0 +1,28 @@
+---
+description: Plans should be product-focused for a designer audience
+alwaysApply: true
+---
+
+# Plan Format
+
+The project owner is a **product designer**, not an engineer. When creating plans (Plan mode):
+
+## Write for the product, not the codebase
+
+- **Lead with UX**: what feels broken, what should feel different, user scenarios.
+- **Explain causes in plain language** — avoid jargon like hit testing, gesture composition, binding, resolver.
+- **Skip** file paths, code snippets, architecture diagrams, and implementation tables unless explicitly asked.
+- **Keep it short** — one screen of reading. Bullets over long sections.
+
+## Structure (default)
+
+1. **Problem** — 2–3 bullets, user's words
+2. **Why** — simple causes, no code
+3. **What we'll do** — grouped by priority (must / nice / optional)
+4. **How we'll know it works** — manual checks in product terms
+5. **Expected outcome** — one short paragraph
+
+## Technical detail
+
+- Put file names, APIs, and code in **implementation notes** only if the user asks to execute or wants engineering detail.
+- Todos in the plan should describe **user-visible outcomes**, not code tasks.

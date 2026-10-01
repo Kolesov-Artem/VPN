@@ -76,6 +76,7 @@ struct PanelScrollCoordinator<Content: View>: UIViewControllerRepresentable {
 
     private func apply(to controller: PanelScrollViewController<Content>, pushContent: Bool) {
         controller.scrollViewHandle = panelScrollViewHandle
+        controller.bindScrollViewHandle()
         if controller.isScrollEnabled != isScrollEnabled {
             controller.isScrollEnabled = isScrollEnabled
         }
@@ -128,6 +129,11 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     private var minContentHeightConstraint: NSLayoutConstraint?
     private var appliedLayoutWidth: CGFloat = .nan
     private var appliedLayoutInset: CGFloat = .nan
+    private var frozenContentOffset: CGPoint?
+    private var freezeUntil: CFTimeInterval = 0
+    private var accordionOverflowInset: CGFloat = 0
+    private var pinnedAnchorName: String?
+    private var pinnedAnchorTargetY: CGFloat?
 
     init(rootView: Content) {
         self.rootView = rootView
@@ -205,27 +211,25 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
         super.viewDidLayoutSubviews()
         let width = scrollView.bounds.width
         let inset = bottomContentInset
-        guard abs(width - appliedLayoutWidth) > 0.5 || abs(inset - appliedLayoutInset) > 0.5 else {
-            return
+        if abs(width - appliedLayoutWidth) > 0.5 || abs(inset - appliedLayoutInset) > 0.5 {
+            appliedLayoutWidth = width
+            appliedLayoutInset = inset
+            minContentHeightConstraint?.constant = -inset
         }
-        appliedLayoutWidth = width
-        appliedLayoutInset = inset
-        let preservedOffset = scrollView.contentOffset
-        minContentHeightConstraint?.constant = -inset
-        if abs(scrollView.contentOffset.y - preservedOffset.y) > 0.5 {
-            scrollView.contentOffset = preservedOffset
-        }
+        relockFrozenOffsetIfNeeded()
     }
 
     func updateHostedContent(_ content: Content, preservingOffset: CGPoint) {
         rootView = content
         guard isViewLoaded else { return }
+        let offset = frozenContentOffset ?? preservingOffset
         UIView.performWithoutAnimation {
+            hostingController.view.layer.removeAllAnimations()
             hostingController.rootView = content
             hostingController.view.invalidateIntrinsicContentSize()
             hostingController.view.layoutIfNeeded()
             scrollView.layoutIfNeeded()
-            scrollView.contentOffset = preservingOffset
+            applyFrozenOffset(offset)
         }
     }
 
@@ -245,14 +249,71 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     }
 
     private func applyContentInset() {
-        scrollView.contentInset.bottom = bottomContentInset
+        scrollView.contentInset.bottom = bottomContentInset + accordionOverflowInset
         scrollView.verticalScrollIndicatorInsets.bottom = bottomContentInset
     }
 
     private func registerScrollViewHandle() {
-        scrollViewHandle?.scrollView = scrollView
+        bindScrollViewHandle()
         if #available(iOS 26.0, *) {
             scrollView.bottomEdgeEffect.isHidden = true
+        }
+    }
+
+    func bindScrollViewHandle() {
+        scrollViewHandle?.scrollView = scrollView
+        scrollViewHandle?.freezeAccordion = { [weak self] name in
+            self?.freezeAccordion(anchorName: name)
+        }
+    }
+
+    private func freezeAccordion(anchorName: String?) {
+        frozenContentOffset = scrollView.contentOffset
+        freezeUntil = CACurrentMediaTime() + 0.55
+        pinnedAnchorName = anchorName
+        if let anchorName, let anchor = scrollView.panelScrollAnchor(named: anchorName) {
+            pinnedAnchorTargetY = anchor.convert(anchor.bounds.origin, to: scrollView).y
+        } else {
+            pinnedAnchorTargetY = nil
+        }
+        applyFrozenOffset(scrollView.contentOffset)
+    }
+
+    private func relockFrozenOffsetIfNeeded() {
+        guard var frozen = frozenContentOffset else { return }
+        if CACurrentMediaTime() > freezeUntil {
+            frozenContentOffset = nil
+            pinnedAnchorName = nil
+            pinnedAnchorTargetY = nil
+            return
+        }
+        applyFrozenOffset(frozen)
+        guard let name = pinnedAnchorName,
+              let targetY = pinnedAnchorTargetY,
+              let anchor = scrollView.panelScrollAnchor(named: name) else {
+            return
+        }
+        let currentY = anchor.convert(anchor.bounds.origin, to: scrollView).y
+        let delta = currentY - targetY
+        guard abs(delta) > 0.5 else { return }
+        frozen.y += delta
+        frozenContentOffset = frozen
+        applyFrozenOffset(frozen)
+    }
+
+    private func applyFrozenOffset(_ offset: CGPoint) {
+        let visibleHeight = scrollView.bounds.height - bottomContentInset
+        let maxNaturalOffset = max(0, scrollView.contentSize.height - visibleHeight)
+        let neededOverflow = offset.y > maxNaturalOffset + 0.5 ? offset.y - maxNaturalOffset : 0
+        if abs(neededOverflow - accordionOverflowInset) > 0.5 {
+            accordionOverflowInset = neededOverflow
+            applyContentInset()
+        }
+        frozenContentOffset = offset
+        if abs(scrollView.contentOffset.y - offset.y) > 0.5 || abs(scrollView.contentOffset.x - offset.x) > 0.5 {
+            UIView.performWithoutAnimation {
+                scrollView.setContentOffset(offset, animated: false)
+            }
         }
     }
 
@@ -265,6 +326,14 @@ final class PanelScrollViewController<Content: View>: UIViewController, UIScroll
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if isForwardingPanelPan, !isHandedOffToScroll, scrollView.contentOffset.y != 0 {
             scrollView.contentOffset.y = 0
+        }
+        if frozenContentOffset == nil, accordionOverflowInset > 0 {
+            let visibleHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - bottomContentInset
+            let maxNaturalOffset = max(0, scrollView.contentSize.height - visibleHeight)
+            if scrollView.contentOffset.y <= maxNaturalOffset + 0.5 {
+                accordionOverflowInset = 0
+                applyContentInset()
+            }
         }
         reportScrollState()
     }

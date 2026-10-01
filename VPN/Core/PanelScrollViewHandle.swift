@@ -4,29 +4,54 @@ import UIKit
 /// Weak bridge from `PanelScrollViewController` to the panel search dock edge effect.
 final class PanelScrollViewHandle {
     weak var scrollView: UIScrollView?
+    var freezeAccordion: ((_ anchorName: String?) -> Void)?
 
     /// Keeps the scroll position stable when nested accordions change height.
     func preserveContentOffset() {
-        guard let scrollView else { return }
-        let offset = scrollView.contentOffset
-        DispatchQueue.main.async {
-            Self.applyOffset(offset, to: scrollView)
-        }
+        freezeAccordion?(nil)
     }
 
-    /// After an accordion toggle, keep a header at the same place on screen.
-    func shiftContentOffset(by delta: CGFloat) {
-        guard let scrollView, abs(delta) > 0.5 else { return }
-        var offset = scrollView.contentOffset
-        offset.y += delta
-        Self.applyOffset(offset, to: scrollView)
+    /// Keeps a named header at the same place on screen while the list resizes.
+    func preserveAnchor(_ name: String) {
+        freezeAccordion?(name)
     }
 
-    private static func applyOffset(_ offset: CGPoint, to scrollView: UIScrollView) {
-        UIView.performWithoutAnimation {
-            scrollView.layoutIfNeeded()
-            scrollView.setContentOffset(offset, animated: false)
+    /// Brings a named marker to the top of the list, under the compact bar.
+    @discardableResult
+    func scrollToAnchor(_ name: String, animated: Bool) -> Bool {
+        guard let scrollView, let anchor = scrollView.panelScrollAnchor(named: name) else {
+            return false
         }
+        let origin = anchor.convert(anchor.bounds.origin, to: scrollView).y
+        let topChrome = VelvetMetrics.panelScrollChromeHeight
+        let targetY = max(0, origin - topChrome)
+        scrollView.setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
+        return true
+    }
+}
+
+/// Invisible UIKit marker so accordion layout can pin a header in scroll coordinates.
+struct PanelScrollAnchor: UIViewRepresentable {
+    let name: String
+
+    func makeUIView(context: Context) -> PanelScrollAnchorView {
+        let view = PanelScrollAnchorView()
+        view.anchorName = name
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: PanelScrollAnchorView, context: Context) {
+        uiView.anchorName = name
+    }
+}
+
+final class PanelScrollAnchorView: UIView {
+    var anchorName = ""
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: 1, height: 1)
     }
 }
 
@@ -38,5 +63,19 @@ extension EnvironmentValues {
     var panelScrollViewHandle: PanelScrollViewHandle {
         get { self[PanelScrollViewHandleKey.self] }
         set { self[PanelScrollViewHandleKey.self] = newValue }
+    }
+}
+
+extension UIView {
+    func panelScrollAnchor(named name: String) -> PanelScrollAnchorView? {
+        if let anchor = self as? PanelScrollAnchorView, anchor.anchorName == name {
+            return anchor
+        }
+        for subview in subviews {
+            if let anchor = subview.panelScrollAnchor(named: name) {
+                return anchor
+            }
+        }
+        return nil
     }
 }

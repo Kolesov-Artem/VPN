@@ -9,39 +9,39 @@ struct VPNSupportView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Help") {
-                    supportRow("Connection keeps failing", detail: "Check active subscriptions and try Smart-Auto.")
-                    supportRow("Import failed", detail: "Verify the subscription URL and try again.")
-                    supportRow("Slow speeds", detail: "Run Check ping and pick a lower-latency server.")
+                Section(ui("Help")) {
+                    supportRow("Connection keeps failing", detail: ui("Check active subscriptions and try Smart-Auto."))
+                    supportRow("Import failed", detail: ui("Verify the subscription URL and try again."))
+                    supportRow("Slow speeds", detail: ui("Run Check ping and pick a lower-latency server."))
                 }
 
-                Section("Contact") {
+                Section(ui("Contact")) {
                     Button {
                         openURL(URL(string: "mailto:support@velvet.vpn")!)
                     } label: {
-                        Label("Email support", systemImage: "envelope")
+                        Label(ui("Email support"), systemImage: "envelope")
                     }
 
                     Button {
                         openURL(URL(string: "https://velvet.vpn/help")!)
                     } label: {
-                        Label("Help center", systemImage: "safari")
+                        Label(ui("Help center"), systemImage: "safari")
                     }
                 }
 
                 if let providerName {
-                    Section("Provider") {
-                        Text("Questions about \(providerName) billing or renewal should go to that provider's support channel.")
+                    Section(ui("Provider")) {
+                        Text(uiFormat("Questions about %@ billing or renewal should go to that provider's support channel.", providerName))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .navigationTitle("Support")
+            .navigationTitle(ui("Support"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
         }

@@ -14,13 +14,18 @@ struct VPNAllLocationsCard: View {
     var panelStaggerIndexOffset: Int = 0
 
     var favouriteIDs: Set<String> = []
+    /// The island keeps the white plate. A locations page can sit the rows on the page instead.
+    var showsPlate = true
+    /// Each group sits on its own white card. The page title above the list can go.
+    var groupsAsPlates = false
+    /// Group names read as headlines when the list is the page, not a caption inside a card.
+    var prominentSectionHeaders = false
     let onSmartLocation: (VPNUserJob) -> Void
     let onManualLocation: (VPNNetworkLocation) -> Void
     var onToggleFavourite: (VPNNetworkLocation) -> Void = { _ in }
 
     @State private var expandedGroupIDs: Set<String> = []
     @State private var collapsedSectionIDs: Set<String> = []
-    @State private var sectionHeaderMinY: [String: CGFloat] = [:]
 
     @Environment(\.panelScrollViewHandle) private var panelScrollViewHandle
 
@@ -43,7 +48,7 @@ struct VPNAllLocationsCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: groupsAsPlates ? 12 : 0) {
             if !query.isDefault {
                 activeFilterChips
                     .velvetPanelRowReveal(
@@ -63,19 +68,21 @@ struct VPNAllLocationsCard: View {
                     )
             } else {
                 locationSectionStack
-                    .onPreferenceChange(SectionHeaderMinYKey.self) { sectionHeaderMinY = $0 }
                     .transaction(value: collapsedSectionIDs) { $0.animation = nil }
+                    .transaction(value: expandedGroupIDs) { $0.animation = nil }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, showsPlate ? 12 : 4)
         .background {
-            RoundedRectangle(cornerRadius: VelvetMetrics.groupedCornerRadius, style: .continuous)
-                .fill(VelvetTheme.contentSurface)
-                .velvetPanelRowReveal(
-                    progress: panelRevealProgress,
-                    index: max(panelStaggerIndexOffset - 1, 0),
-                    reduceMotion: reduceMotion
-                )
+            if showsPlate {
+                RoundedRectangle(cornerRadius: VelvetMetrics.groupedCornerRadius, style: .continuous)
+                    .fill(VelvetTheme.contentSurface)
+                    .velvetPanelRowReveal(
+                        progress: panelRevealProgress,
+                        index: max(panelStaggerIndexOffset - 1, 0),
+                        reduceMotion: reduceMotion
+                    )
+            }
         }
         .velvetLoadingShimmer(
             isActive: hidesForLoading,
@@ -101,7 +108,8 @@ struct VPNAllLocationsCard: View {
                             title: title,
                             explanation: section.explanation,
                             showsDisclosure: true,
-                            isDisclosureExpanded: isSectionExpanded
+                            isDisclosureExpanded: isSectionExpanded,
+                            isProminent: prominentSectionHeaders
                         )
                     }
                     .buttonStyle(.plain)
@@ -109,13 +117,10 @@ struct VPNAllLocationsCard: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
                     .padding(.bottom, VelvetMetrics.panelSectionHeaderSpacing)
-                    .background {
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: SectionHeaderMinYKey.self,
-                                value: [section.id: geo.frame(in: .global).minY]
-                            )
-                        }
+                    .overlay(alignment: .topLeading) {
+                        PanelScrollAnchor(name: section.id)
+                            .frame(width: 1, height: 1)
+                            .allowsHitTesting(false)
                     }
                     .velvetPanelRowReveal(
                         progress: panelRevealProgress,
@@ -145,6 +150,13 @@ struct VPNAllLocationsCard: View {
                 .opacity(isSectionExpanded ? 1 : 0)
                 .allowsHitTesting(isSectionExpanded)
                 .accessibilityHidden(!isSectionExpanded)
+            }
+            .padding(.bottom, groupsAsPlates ? 4 : 0)
+            .background {
+                if groupsAsPlates {
+                    RoundedRectangle(cornerRadius: VelvetMetrics.groupedCornerRadius, style: .continuous)
+                        .fill(VelvetTheme.contentSurface)
+                }
             }
             .animation(nil, value: collapsedSectionIDs.contains(section.id))
         }
@@ -179,10 +191,19 @@ struct VPNAllLocationsCard: View {
                     isSelected: isCountryGroupHeaderSelected(group, smartLocation: smartLocation)
                 )
             }
+            .overlay(alignment: .topLeading) {
+                PanelScrollAnchor(name: Self.groupAnchorName(group.id))
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+            }
 
-            if isExpanded {
+            if isExpandable {
                 expandedGroupContent(group, smartLocation: smartLocation)
-                    .transition(.identity)
+                    .frame(height: isExpanded ? nil : 0, alignment: .top)
+                    .clipped()
+                    .opacity(isExpanded ? 1 : 0)
+                    .allowsHitTesting(isExpanded)
+                    .accessibilityHidden(!isExpanded)
             }
         }
         .animation(nil, value: isExpanded)
@@ -354,7 +375,7 @@ struct VPNAllLocationsCard: View {
     }
 
     private var emptyFilterState: some View {
-        Text("No locations match your search or filters.")
+        Text(ui("No locations match your search or filters."))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -364,7 +385,7 @@ struct VPNAllLocationsCard: View {
     }
 
     private func toggleSectionExpansion(_ id: String) {
-        let oldY = sectionHeaderMinY[id]
+        panelScrollViewHandle.preserveAnchor(id)
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -374,29 +395,23 @@ struct VPNAllLocationsCard: View {
                 collapsedSectionIDs.insert(id)
             }
         }
-        DispatchQueue.main.async {
-            if let oldY, let newY = sectionHeaderMinY[id] {
-                panelScrollViewHandle.shiftContentOffset(by: newY - oldY)
-            }
-        }
     }
 
     private func toggleGroupExpansion(_ id: String) {
-        mutateExpansionSet(&expandedGroupIDs, id: id)
-    }
-
-    private func mutateExpansionSet(_ ids: inout Set<String>, id: String) {
-        panelScrollViewHandle.preserveContentOffset()
+        panelScrollViewHandle.preserveAnchor(Self.groupAnchorName(id))
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            if ids.contains(id) {
-                ids.remove(id)
+            if expandedGroupIDs.contains(id) {
+                expandedGroupIDs.remove(id)
             } else {
-                ids.insert(id)
+                expandedGroupIDs.insert(id)
             }
         }
-        panelScrollViewHandle.preserveContentOffset()
+    }
+
+    private static func groupAnchorName(_ id: String) -> String {
+        "group:\(id)"
     }
 
     private func pingLabel(for candidate: VPNNetworkLocation) -> String? {
@@ -448,13 +463,5 @@ struct VPNAllLocationsCard: View {
             .padding(.vertical, 8)
         }
         .scrollIndicators(.hidden)
-    }
-}
-
-private struct SectionHeaderMinYKey: PreferenceKey {
-    static var defaultValue: [String: CGFloat] = [:]
-
-    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

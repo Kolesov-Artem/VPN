@@ -13,8 +13,8 @@ struct VelvetAnalyticsGateCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Analytics only with Velvet")
-        .accessibilityHint("Opens Velvet VPN website")
+        .accessibilityLabel(ui("Analytics only with Velvet"))
+        .accessibilityHint(ui("Opens Velvet VPN website"))
     }
 
     private var formRowContent: some View {
@@ -25,11 +25,11 @@ struct VelvetAnalyticsGateCard: View {
                 .frame(width: 28, height: 28)
                 .background(Color(.tertiarySystemFill), in: Circle())
 
-            Text("Analytics only with Velvet")
+            Text(ui("Analytics only with Velvet"))
                 .font(.subheadline.weight(.semibold))
                 .multilineTextAlignment(.center)
 
-            Button("Explore Velvet", action: onExplore)
+            Button(ui("Explore Velvet"), action: onExplore)
                 .font(.body)
                 .buttonStyle(.bordered)
                 .controlSize(.small)

@@ -8,8 +8,8 @@ enum VPNHomeFormat: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .classic: "Single provider"
-        case .networksAndLocations: "Networks & locations"
+        case .classic: ui("Single provider")
+        case .networksAndLocations: ui("Networks & locations")
         }
     }
 }
@@ -93,21 +93,21 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         switch status {
         case let .active(locationCount, trafficRemaining):
             if let expiryLabel {
-                "\(locationCount) locations · \(trafficRemaining) · \(expiryLabel)"
+                uiFormat("%lld locations · %@ · %@", locationCount, uiTraffic(trafficRemaining), expiryLabel)
             } else {
-                "\(locationCount) locations · \(trafficRemaining)"
+                uiFormat("%lld locations · %@", locationCount, uiTraffic(trafficRemaining))
             }
         case .expired:
-            "Subscription expired"
+            ui("Subscription expired")
         }
     }
 
     var expiryLabel: String? {
         guard let expiresAt else { return nil }
         let days = Calendar.current.dateComponents([.day], from: .now, to: expiresAt).day ?? 0
-        if days < 0 { return "Expired" }
-        if days == 0 { return "Expires today" }
-        if days <= 7 { return "Expires in \(days) days" }
+        if days < 0 { return ui("Expired") }
+        if days == 0 { return ui("Expires today") }
+        if days <= 7 { return uiFormat("Expires in %lld days", days) }
         return nil
     }
 
@@ -116,7 +116,7 @@ struct VPNProvider: Identifiable, Equatable, Codable {
     }
 
     var maskedSubscriptionURL: String {
-        guard let subscriptionURL, !subscriptionURL.isEmpty else { return "Not set" }
+        guard let subscriptionURL, !subscriptionURL.isEmpty else { return ui("Not set") }
         guard subscriptionURL.count > 24 else { return subscriptionURL }
         let prefix = subscriptionURL.prefix(18)
         return "\(prefix)…"
@@ -124,19 +124,19 @@ struct VPNProvider: Identifiable, Equatable, Codable {
 
     var smartAutoBadge: String? {
         guard status.isActive else { return nil }
-        return includedInSmartAuto ? "Included in Auto" : "Manual only"
+        return includedInSmartAuto ? ui("Included in Auto") : ui("Manual only")
     }
 
     /// Subtitle for the expanded panel header, e.g. "120 GB left, 28 days left".
     var panelHeaderSubtitle: String {
         switch status {
         case .expired:
-            "Subscription expired"
+            ui("Subscription expired")
         case let .active(_, trafficRemaining):
             if let daysRemainingLabel {
-                "\(trafficRemaining), \(daysRemainingLabel)"
+                "\(uiTraffic(trafficRemaining)), \(daysRemainingLabel)"
             } else {
-                trafficRemaining
+                uiTraffic(trafficRemaining)
             }
         }
     }
@@ -144,9 +144,9 @@ struct VPNProvider: Identifiable, Equatable, Codable {
     private var daysRemainingLabel: String? {
         guard let expiresAt else { return nil }
         let days = Calendar.current.dateComponents([.day], from: .now, to: expiresAt).day ?? 0
-        if days < 0 { return "Expired" }
-        if days == 0 { return "0 days left" }
-        return "\(days) days left"
+        if days < 0 { return ui("Expired") }
+        if days == 0 { return ui("0 days left") }
+        return uiFormat("%lld days left", days)
     }
 
     var needsRenewalWarning: Bool {
@@ -166,9 +166,9 @@ struct VPNProvider: Identifiable, Equatable, Codable {
         switch status {
         case let .active(_, trafficRemaining):
             if let daysRemainingLabel {
-                return "\(trafficRemaining), \(daysRemainingLabel)"
+                return "\(uiTraffic(trafficRemaining)), \(daysRemainingLabel)"
             }
-            return trafficRemaining
+            return uiTraffic(trafficRemaining)
         case .expired:
             return nil
         }
@@ -178,9 +178,9 @@ struct VPNProvider: Identifiable, Equatable, Codable {
     var networksListSubtitle: String {
         switch status {
         case let .active(locationCount, trafficRemaining):
-            "\(locationCount) locations · \(trafficRemaining)"
+            uiFormat("%lld locations · %@", locationCount, uiTraffic(trafficRemaining))
         case .expired:
-            "Subscription expired"
+            ui("Subscription expired")
         }
     }
 
@@ -202,7 +202,7 @@ struct VPNProvider: Identifiable, Equatable, Codable {
 
     var lastUpdatedCaption: String? {
         guard let lastUpdated else { return nil }
-        return "Updated \(Self.relativeDate.localizedString(for: lastUpdated, relativeTo: .now))"
+        return Self.relativeCaption(for: lastUpdated)
     }
 
     /// ID and freshness on one line — same pattern as Mail accounts and App Store subscriptions.
@@ -212,19 +212,20 @@ struct VPNProvider: Identifiable, Equatable, Codable {
             .joined(separator: " · ")
     }
 
-    private static let relativeDate: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
+    private static func relativeCaption(for date: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: date, to: .now).day ?? 0
+        if days <= 0 { return ui("Updated just now") }
+        if days == 1 { return ui("Updated yesterday") }
+        return uiFormat("Updated %lld days ago", days)
+    }
 
     static func allSubscriptionsCaption(providers: [VPNProvider]) -> String {
         let count = providers.count
-        let noun = count == 1 ? "subscription" : "subscriptions"
+        let noun = uiFormat(count == 1 ? "%lld subscription" : "%lld subscriptions", count)
         let latest = providers.compactMap(\.lastUpdated).max()
-        var parts = ["\(count) \(noun)"]
+        var parts = [noun]
         if let latest {
-            parts.append("Updated \(relativeDate.localizedString(for: latest, relativeTo: .now))")
+            parts.append(relativeCaption(for: latest))
         }
         return parts.joined(separator: " · ")
     }
@@ -232,12 +233,12 @@ struct VPNProvider: Identifiable, Equatable, Codable {
     func tunnelStatusLabel(isConnected: Bool, activeProviderID: UUID?) -> String {
         switch status {
         case .expired:
-            "Expired"
+            ui("Expired")
         case .active:
             if isConnected, activeProviderID == id {
-                "Connected"
+                ui("Connected")
             } else {
-                "Disconnected"
+                ui("Disconnected")
             }
         }
     }
@@ -250,11 +251,11 @@ enum VPNProviderAvailabilitySummary {
 
         switch (available, expired) {
         case (0, let expired) where expired > 0:
-            return "\(expired) expired"
+            return uiFormat("%lld expired", expired)
         case (let available, 0):
-            return "\(available) available"
+            return uiFormat("%lld available", available)
         case (let available, let expired):
-            return "\(available) available, \(expired) expired"
+            return uiFormat("%lld available, %lld expired", available, expired)
         }
     }
 
@@ -319,7 +320,7 @@ struct VPNResolvedConnection: Equatable {
 
     var summarySubtitle: String {
         let modeLabel = VPNSelectionSummary.selectionLabel(for: selection)
-        return "\(modeLabel) · \(location.city) · \(location.pingLabel) · \(provider.name)"
+        return "\(modeLabel) · \(ui(location.city)) · \(location.pingLabel) · \(provider.name)"
     }
 }
 
@@ -366,11 +367,11 @@ struct VPNQualityDisplay: Equatable {
     init(signal: VPNLocation.Signal) {
         switch signal {
         case .excellent:
-            self.init(label: "Best", tone: .positive)
+            self.init(label: ui("Best"), tone: .positive)
         case .good:
-            self.init(label: "Good", tone: .positive)
+            self.init(label: ui("Good"), tone: .positive)
         case .fair:
-            self.init(label: "So so", tone: .caution)
+            self.init(label: ui("So so"), tone: .caution)
         }
     }
 }
@@ -378,17 +379,17 @@ struct VPNQualityDisplay: Equatable {
 enum VPNSelectionSummary {
     static func selectionLabel(for selection: VPNLocationSelection) -> String {
         switch selection {
-        case .smartAuto: "Smart-Auto"
+        case .smartAuto: ui("Smart-Auto")
         case let .smartJob(job, _): job.title
-        case .manual: "Manual"
+        case .manual: ui("Manual")
         }
     }
 
     static func scopeLabel(for scope: VPNProviderScope, providers: [VPNProvider]) -> String {
         switch scope {
-        case .allNetworks: "All networks"
+        case .allNetworks: ui("All networks")
         case let .provider(id):
-            providers.first(where: { $0.id == id })?.name ?? "One network"
+            providers.first(where: { $0.id == id })?.name ?? ui("One network")
         }
     }
 
@@ -399,14 +400,14 @@ enum VPNSelectionSummary {
     ) -> String {
         switch connectionState {
         case .connecting:
-            if isSwitchingServer { return "Switching server…" }
-            return homeFormat == .networksAndLocations ? "Finding best connection…" : "Connecting…"
+            if isSwitchingServer { return ui("Switching server…") }
+            return homeFormat == .networksAndLocations ? ui("Finding best connection…") : ui("Connecting…")
         case .connected:
-            return "Protected"
+            return ui("Protected")
         case .failed:
-            return "Couldn't connect"
+            return ui("Couldn't connect")
         case .disconnected:
-            return "Ready to connect"
+            return ui("Ready to connect")
         }
     }
 
@@ -425,9 +426,9 @@ enum VPNSelectionSummary {
 
         if connectionState == .connecting {
             if homeFormat == .networksAndLocations {
-                return isSwitchingServer ? "Applying new location…" : "Pinging all active providers"
+                return isSwitchingServer ? ui("Applying new location…") : ui("Pinging all active providers")
             }
-            return selectedLocation.name
+            return ui(selectedLocation.name)
         }
 
         if connectionState == .connected,
@@ -440,7 +441,7 @@ enum VPNSelectionSummary {
             return disconnectedNetworksSubtitle(selection: selection, providers: providers)
         }
 
-        return selectedLocation.name
+        return ui(selectedLocation.name)
     }
 
     static func collapsedSubtitle(
@@ -454,18 +455,18 @@ enum VPNSelectionSummary {
         }
 
         if case .failed = connectionState {
-            return "Last attempt failed · tap Retry"
+            return ui("Last attempt failed · tap Retry")
         }
 
         let quality = VPNConnectionPlanner.qualityLabel(for: selection, providers: providers)
 
         switch selection {
         case let .smartAuto(scope):
-            return "\(scopeLabel(for: scope, providers: providers)) · Smart-Auto · \(quality)"
+            return "\(scopeLabel(for: scope, providers: providers)) · \(ui("Smart-Auto")) · \(quality)"
         case let .smartJob(job, scope):
             return "\(scopeLabel(for: scope, providers: providers)) · \(job.title) · \(quality)"
         case let .manual(location, _):
-            return "Manual · \(location.city) · \(location.pingLabel)"
+            return uiFormat("Manual · %@ · %@", ui(location.city), location.pingLabel)
         }
     }
 
@@ -477,15 +478,15 @@ enum VPNSelectionSummary {
 
         switch selection {
         case let .smartAuto(scope):
-            return "\(quality) · Smart-Auto · \(scopeLabel(for: scope, providers: providers))"
+            return "\(quality) · \(ui("Smart-Auto")) · \(scopeLabel(for: scope, providers: providers))"
         case let .smartJob(job, scope):
             if job == .whitelistForeign {
-                return "\(quality) · \(job.title) · split routing"
+                return "\(quality) · \(job.title) · \(ui("split routing"))"
             }
             return "\(quality) · \(job.title) · \(scopeLabel(for: scope, providers: providers))"
         case let .manual(location, providerID):
-            let providerName = providers.first(where: { $0.id == providerID })?.name ?? "Network"
-            return "Manual · \(location.name) · \(location.city) · \(providerName)"
+            let providerName = providers.first(where: { $0.id == providerID })?.name ?? ui("Network")
+            return uiFormat("Manual · %@ · %@ · %@", ui(location.name), ui(location.city), providerName)
         }
     }
 }
@@ -789,7 +790,7 @@ enum VPNConnectionPlanner {
             }
             if mergedLocations(from: scopedEligibleProviders(providers, scope: scope)).isEmpty {
                 return VPNSelectionMismatch(
-                    reason: .scopedProviderMissing(scopeLabel: "Selected network"),
+                    reason: .scopedProviderMissing(scopeLabel: ui("Selected network")),
                     providerName: providerName,
                     selection: selection
                 )
@@ -798,7 +799,7 @@ enum VPNConnectionPlanner {
         case let .manual(_, providerID):
             if !providers.contains(where: { $0.id == providerID && $0.isEligibleForAutoConnect }) {
                 return VPNSelectionMismatch(
-                    reason: .scopedProviderMissing(scopeLabel: "Selected server"),
+                    reason: .scopedProviderMissing(scopeLabel: ui("Selected server")),
                     providerName: providerName,
                     selection: selection
                 )

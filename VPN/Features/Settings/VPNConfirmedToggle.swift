@@ -36,7 +36,7 @@ struct VPNConfirmedToggle: View {
                 Button(confirmButtonTitle, role: confirmButtonRole) {
                     isOn = pendingValue
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(ui("Cancel"), role: .cancel) {}
             } message: {
                 if let confirmation {
                     Text(confirmation.message(from: isOn, to: pendingValue) ?? "")
@@ -69,7 +69,7 @@ struct VPNConfirmedToggle: View {
 
 enum VPNSettingsConfirmations {
     static let killSwitch = VPNToggleConfirmation(
-        title: "Turn on Kill Switch?",
+        title: ui("Turn on Kill Switch?"),
         enablingMessage: "If the VPN disconnects, internet access will be blocked until you connect again.",
         disablingMessage: "Traffic may leave the secure tunnel if the VPN drops while Kill Switch is off.",
         confirmsOnEnable: true,
@@ -77,7 +77,7 @@ enum VPNSettingsConfirmations {
     )
 
     static let splitTunneling = VPNToggleConfirmation(
-        title: "Turn on Split Tunneling?",
+        title: ui("Turn on Split Tunneling?"),
         enablingMessage: "Some apps and sites may bypass the VPN and use your regular connection.",
         disablingMessage: "All traffic will route through the VPN again.",
         confirmsOnEnable: true,
@@ -85,7 +85,7 @@ enum VPNSettingsConfirmations {
     )
 
     static let routeAllTraffic = VPNToggleConfirmation(
-        title: "Allow traffic outside VPN?",
+        title: ui("Allow traffic outside VPN?"),
         enablingMessage: "Some traffic may bypass the VPN when this is turned off.",
         disablingMessage: "Some apps and sites may use your regular connection instead of the VPN tunnel.",
         confirmsOnEnable: false,
@@ -93,7 +93,7 @@ enum VPNSettingsConfirmations {
     )
 
     static let networkScope = VPNToggleConfirmation(
-        title: "Change network preference?",
+        title: ui("Change network preference?"),
         enablingMessage: "Locations and Connect will use only this subscription until you change it back.",
         disablingMessage: "Velvet will choose from all active subscriptions again.",
         confirmsOnEnable: true,
@@ -101,7 +101,7 @@ enum VPNSettingsConfirmations {
     )
 
     static let smartAuto = VPNToggleConfirmation(
-        title: "Remove from Smart-Auto?",
+        title: ui("Remove from Smart-Auto?"),
         enablingMessage: "",
         disablingMessage: "This subscription will no longer be used for Smart picks or automatic server selection.",
         confirmsOnEnable: false,

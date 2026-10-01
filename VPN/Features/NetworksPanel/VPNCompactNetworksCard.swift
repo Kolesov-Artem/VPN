@@ -23,8 +23,7 @@ struct VPNCompactNetworksCard: View {
         if VPNReleaseProfile.isRelease1 {
             return VPNFigmaSection550Copy.providersSummary(count: count)
         }
-        let providerWord = count == 1 ? "provider" : "providers"
-        return "\(count) VPN \(providerWord)"
+        return uiFormat("%lld VPN providers", count)
     }
 
     private var needsAttention: Bool {

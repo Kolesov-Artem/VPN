@@ -1,0 +1,54 @@
+---
+description: After app changes, build and launch the iOS prototype in Simulator
+alwaysApply: true
+---
+
+# Launch Prototype After Changes
+
+After applying changes that affect the app prototype, **automatically launch it for the user** before you finish the task.
+
+## When to launch
+
+Run the prototype when you changed anything that affects what the user sees or interacts with:
+
+- SwiftUI views, design tokens, assets, app state
+- Schemes, launch arguments, onboarding/home routing
+
+**Skip launch** only when:
+
+- The user explicitly asks not to
+- Changes are docs/rules-only with no runtime effect
+- You already launched the same build in this task and made no further app changes
+
+## How to launch
+
+From the repo root:
+
+```bash
+./scripts/launch-prototype.sh
+```
+
+This builds the `VPN` scheme, opens **iPhone 17 Pro** on **iOS 26**, installs the app, and launches it with the same args as the Xcode scheme: `--show-home --panel-island`.
+
+Optional overrides:
+
+- `SIMULATOR_NAME="iPhone 17 Pro Max" ./scripts/launch-prototype.sh`
+- Extra launch flags for a specific scenario: pass them after install via `xcrun simctl launch` (e.g. `--multi-provider`, `--expiring-soon`)
+
+## Order of operations
+
+1. Apply the requested changes
+2. Build and/or run tests when relevant (see `verify-changes`)
+3. **Launch the prototype** so the user can review immediately
+4. Report build/launch result honestly
+
+## If launch fails
+
+- Read the error, fix the issue, and retry
+- Do not mark UI work complete with only a successful compile
+
+## Anti-patterns
+
+- ❌ Finishing UI work without opening the simulator
+- ❌ Telling the user to run Xcode manually when the script is available
+- ❌ Skipping launch because tests already passed

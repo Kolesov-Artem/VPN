@@ -22,8 +22,8 @@ struct ConnectionIPWell: View {
 
     private var content: some View {
         HStack(spacing: 12) {
-            ipColumn(title: "Device", value: deviceIP)
-            ipColumn(title: "VPN", value: vpnIP ?? "—")
+            ipColumn(title: ui("Device"), value: deviceIP)
+            ipColumn(title: ui("VPN"), value: vpnIP ?? "—")
         }
         .padding(.horizontal, VelvetTheme.horizontalPadding)
         .padding(.vertical, 10)

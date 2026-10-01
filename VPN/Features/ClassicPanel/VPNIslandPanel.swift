@@ -68,17 +68,16 @@ struct VPNIslandPanel: View {
         .onChange(of: query.text) { _, _ in
             expandPanelForSearchIfNeeded(isFocused: searchIsFocused)
         }
-        .confirmationDialog(
-            "Delete this configuration?",
+        .confirmationDialog(ui("Delete this configuration?"),
             isPresented: $showsDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button(ui("Delete"), role: .destructive) {
                 connectionState = .disconnected
             }
-            Button("Cancel", role: .cancel) {}
+            Button(ui("Cancel"), role: .cancel) {}
         } message: {
-            Text("The prototype keeps the demo configuration, so nothing is removed.")
+            Text(ui("The prototype keeps the demo configuration, so nothing is removed."))
         }
     }
 
@@ -126,9 +125,9 @@ struct VPNIslandPanel: View {
                 .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Velvet VPN")
+                    Text(ui("Velvet VPN"))
                         .font(.subheadline.weight(.semibold))
-                    Text("99% traffic · 933 days")
+                    Text(ui("99% traffic · 933 days"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -151,7 +150,7 @@ struct VPNIslandPanel: View {
             }
             .buttonStyle(PressScaleButtonStyle())
             .fixedSize()
-            .accessibilityLabel(context.position == .island ? "Expand panel" : "Collapse panel")
+            .accessibilityLabel(context.position == .island ? ui("Expand panel") : ui("Collapse panel"))
         }
         .padding(.horizontal, VelvetTheme.horizontalPadding)
         .padding(.bottom, VelvetMetrics.collapsedHeaderBottomPadding)
@@ -162,30 +161,30 @@ struct VPNIslandPanel: View {
         Menu {
             ControlGroup {
                 Button {} label: {
-                    Label("Info", systemImage: "info.circle")
+                    Label(ui("Info"), systemImage: "info.circle")
                 }
 
                 Button {} label: {
-                    Label("Support", systemImage: "paperplane")
+                    Label(ui("Support"), systemImage: "paperplane")
                 }
             }
             .controlGroupStyle(.compactMenu)
 
             Section {
                 Button {} label: {
-                    Label("Routing", systemImage: "arrow.triangle.branch")
+                    Label(ui("Routing"), systemImage: "arrow.triangle.branch")
                 }
 
                 Button {} label: {
-                    Label("Update subscription", systemImage: "arrow.clockwise.circle")
+                    Label(ui("Update subscription"), systemImage: "arrow.clockwise.circle")
                 }
 
                 Button {} label: {
-                    Label("Check ping", systemImage: "speedometer")
+                    Label(ui("Check ping"), systemImage: "speedometer")
                 }
 
                 Button {} label: {
-                    Label("Edit", systemImage: "square.and.pencil")
+                    Label(ui("Edit"), systemImage: "square.and.pencil")
                 }
             }
 
@@ -193,13 +192,13 @@ struct VPNIslandPanel: View {
                 Button(role: .destructive) {
                     showsDeleteConfirmation = true
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(ui("Delete"), systemImage: "trash")
                 }
             }
         } label: {
             VelvetPanelHeaderIcon(systemName: "ellipsis")
         }
-        .accessibilityLabel("More options")
+        .accessibilityLabel(ui("More options"))
     }
 
     private var connectionButton: some View {
@@ -272,7 +271,7 @@ struct VPNIslandPanel: View {
             } else {
                 if !smartResults.isEmpty {
                     locationSection(
-                        title: "Recommended",
+                        title: ui("Recommended"),
                         locations: smartResults,
                         startIndex: 0,
                         progress: progress,
@@ -300,9 +299,9 @@ struct VPNIslandPanel: View {
             Image(systemName: "magnifyingglass")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("No servers found")
+            Text(ui("No servers found"))
                 .font(.subheadline.weight(.semibold))
-            Text("Try another country, or reset the filters from the menu.")
+            Text(ui("Try another country, or reset the filters from the menu."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -423,11 +422,11 @@ struct VPNIslandPanel: View {
     private var connectionButtonTitle: String {
         switch connectionState {
         case .disconnected:
-            "Connect"
+            ui("Connect")
         case .connecting:
-            "Connecting…"
+            ui("Connecting…")
         case .connected:
-            "Connected"
+            ui("Connected")
         case .failed:
             "Retry"
         }

@@ -14,7 +14,7 @@ struct VPNPingResultsView: View {
                     ContentUnavailableView(
                         "No active servers",
                         systemImage: "speedometer",
-                        description: Text("Add an active subscription to run ping checks.")
+                        description: Text(ui("Add an active subscription to run ping checks."))
                     )
                 } else {
                     ForEach(results) { result in
@@ -35,7 +35,7 @@ struct VPNPingResultsView: View {
                     }
                 }
             }
-            .navigationTitle("Ping results")
+            .navigationTitle(ui("Ping results"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -45,13 +45,13 @@ struct VPNPingResultsView: View {
                         if isRefreshing {
                             ProgressView()
                         } else {
-                            Text("Refresh")
+                            Text(ui("Refresh"))
                         }
                     }
                     .disabled(isRefreshing)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
             .onAppear {
@@ -73,9 +73,9 @@ struct VPNPingResultsView: View {
     @ViewBuilder
     private func signalBadge(_ signal: VPNLocation.Signal) -> some View {
         let label: String = switch signal {
-        case .excellent: "Best"
-        case .good: "Good"
-        case .fair: "Fair"
+        case .excellent: ui("Best")
+        case .good: ui("Good")
+        case .fair: ui("Fair")
         }
         Text(label)
             .font(.caption2.weight(.semibold))

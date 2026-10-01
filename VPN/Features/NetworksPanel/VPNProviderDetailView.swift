@@ -32,7 +32,7 @@ struct VPNProviderDetailView: View {
     }
 
     private var providerSettingsNavigationTitle: String {
-        guard let provider else { return "Provider" }
+        guard let provider else { return ui("Provider") }
         if VPNReleaseProfile.isRelease1 {
             return "\(provider.name) settings"
         }
@@ -49,7 +49,7 @@ struct VPNProviderDetailView: View {
                         legacyDetailForm(provider)
                     }
                 } else {
-                    ContentUnavailableView("Provider not found", systemImage: "exclamationmark.triangle")
+                    ContentUnavailableView(ui("Provider not found"), systemImage: "exclamationmark.triangle")
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -57,15 +57,15 @@ struct VPNProviderDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
-            .alert("Delete subscription?", isPresented: $showsDeleteConfirmation) {
-                Button("Delete", role: .destructive) {
+            .alert(ui("Delete subscription?"), isPresented: $showsDeleteConfirmation) {
+                Button(ui("Delete"), role: .destructive) {
                     providerStore.remove(id: providerID)
                     dismiss()
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(ui("Cancel"), role: .cancel) {}
             } message: {
                 Text("\(provider?.name ?? "This provider") will be removed from Networks and Smart-Auto.")
             }
@@ -85,22 +85,22 @@ struct VPNProviderDetailView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding()
                         }
-                        .navigationTitle("Message from provider")
+                        .navigationTitle(ui("Message from provider"))
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showsProviderMessage = false }
+                                Button(ui("Done")) { showsProviderMessage = false }
                             }
                         }
                     }
                     .presentationDetents([.medium, .large])
                 }
             }
-            .alert("Subscription updated", isPresented: Binding(
+            .alert(ui("Subscription updated"), isPresented: Binding(
                 get: { updateMessage != nil },
                 set: { if !$0 { updateMessage = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button(ui("OK"), role: .cancel) {}
             } message: {
                 Text(updateMessage ?? "")
             }
@@ -126,15 +126,15 @@ struct VPNProviderDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                LabeledContent("Name", value: provider.catalogDisplayName)
+                LabeledContent(ui("Name"), value: provider.catalogDisplayName)
 
                 if let accountID = provider.subscriptionAccountID {
                     copyableInfoRow(label: "ID", value: accountID)
                 }
 
-                LabeledContent("Subscription", value: subscriptionTier(for: provider))
-                LabeledContent("Status", value: statusLabel(for: provider))
-                LabeledContent("Last updated", value: lastUpdatedLabel(for: provider))
+                LabeledContent(ui("Subscription"), value: subscriptionTier(for: provider))
+                LabeledContent(ui("Status"), value: statusLabel(for: provider))
+                LabeledContent(ui("Last updated"), value: lastUpdatedLabel(for: provider))
 
                 Button {
                     if let urlString = provider.subscriptionURL, let url = URL(string: urlString) {
@@ -165,30 +165,30 @@ struct VPNProviderDetailView: View {
                     let wasExpired = provider.status == .expired
                     providerStore.purchaseTraffic(id: providerID)
                     updateMessage = wasExpired
-                        ? "Added traffic. 100 GB is now available."
-                        : "Added traffic. 500 GB is now available."
+                        ? ui("Added traffic. 100 GB is now available.")
+                        : ui("Added traffic. 500 GB is now available.")
                 } label: {
                     Text(VPNFigmaSection550Copy.buyTrafficAction)
                 }
 
                 if provider.status == .expired {
-                    Button("Renew subscription") {
+                    Button(ui("Renew subscription")) {
                         providerStore.renewSubscription(id: providerID)
-                        updateMessage = "Subscription renewed for 30 days."
+                        updateMessage = ui("Subscription renewed for 30 days.")
                     }
                 }
             }
 
             if provider.status.isActive {
-                Section("Settings") {
-                    Toggle("Use as main VPN", isOn: mainVPNBinding(for: provider))
-                    Toggle("Smart-Auto", isOn: smartAutoBinding(for: provider))
+                Section(ui("Settings")) {
+                    Toggle(ui("Use as main VPN"), isOn: mainVPNBinding(for: provider))
+                    Toggle(ui("Smart-Auto"), isOn: smartAutoBinding(for: provider))
                     LabeledContent(
-                        "Auto-Connect",
+                        ui("Auto-Connect"),
                         value: VPNFigmaSection550Copy.providerSettingsAutoConnectValue
                     )
-                    Toggle("Split Tunneling", isOn: $splitTunneling)
-                    Toggle("Notifications", isOn: $notificationsEnabled)
+                    Toggle(ui("Split Tunneling"), isOn: $splitTunneling)
+                    Toggle(ui("Notifications"), isOn: $notificationsEnabled)
                 }
             }
 
@@ -212,12 +212,12 @@ struct VPNProviderDetailView: View {
         }
         .font(.body)
         .contextMenu {
-            Button("Copy") {
+            Button(ui("Copy")) {
                 UIPasteboard.general.string = value
             }
         }
         .accessibilityLabel("\(label), \(value)")
-        .accessibilityHint("Copies the ID")
+        .accessibilityHint(ui("Copies the ID"))
     }
 
     private func lastUpdatedLabel(for provider: VPNProvider) -> String {
@@ -279,7 +279,7 @@ struct VPNProviderDetailView: View {
             }
 
             Section {
-                LabeledContent("Name", value: provider.name)
+                LabeledContent(ui("Name"), value: provider.name)
                 LabeledContent(
                     "Status",
                     value: provider.tunnelStatusLabel(
@@ -288,47 +288,47 @@ struct VPNProviderDetailView: View {
                     )
                 )
                 if let lastUpdated = provider.lastUpdated {
-                    LabeledContent("Last updated", value: lastUpdated.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent(ui("Last updated"), value: lastUpdated.formatted(date: .abbreviated, time: .shortened))
                 }
                 if let expiresAt = provider.expiresAt {
-                    LabeledContent("Expires", value: expiresAt.formatted(date: .abbreviated, time: .omitted))
+                    LabeledContent(ui("Expires"), value: expiresAt.formatted(date: .abbreviated, time: .omitted))
                 }
-                LabeledContent("Subscription", value: subscriptionTier(for: provider))
+                LabeledContent(ui("Subscription"), value: subscriptionTier(for: provider))
                 if let traffic = trafficSummary(for: provider) {
-                    LabeledContent("Traffic", value: traffic)
+                    LabeledContent(ui("Traffic"), value: traffic)
                 }
             }
 
             if provider.status.isActive {
                 Section {
                     VPNConfirmedToggle(
-                        title: "Smart-Auto",
+                        title: ui("Smart-Auto"),
                         isOn: smartAutoBinding(for: provider),
                         confirmation: VPNSettingsConfirmations.smartAuto
                     )
                     VPNConfirmedToggle(
-                        title: "Kill Switch",
+                        title: ui("Kill Switch"),
                         isOn: $killSwitch,
                         confirmation: VPNSettingsConfirmations.killSwitch
                     )
-                    Toggle("DNS Leak Protection", isOn: $dnsLeakProtection)
-                    Toggle("Auto-Connect", isOn: $autoConnect)
+                    Toggle(ui("DNS Leak Protection"), isOn: $dnsLeakProtection)
+                    Toggle(ui("Auto-Connect"), isOn: $autoConnect)
                     VPNConfirmedToggle(
-                        title: "Split Tunneling",
+                        title: ui("Split Tunneling"),
                         isOn: $splitTunneling,
                         confirmation: VPNSettingsConfirmations.splitTunneling
                     )
-                    Toggle("Notifications", isOn: $notificationsEnabled)
+                    Toggle(ui("Notifications"), isOn: $notificationsEnabled)
 
                     if provider.hasProviderMessage {
                         Button {
                             showsProviderMessage = true
                         } label: {
                             HStack {
-                                Text("Message from provider")
+                                Text(ui("Message from provider"))
                                     .foregroundStyle(.primary)
                                 Spacer(minLength: 8)
-                                Text("Available")
+                                Text(ui("Available"))
                                     .foregroundStyle(.secondary)
                                 Image(systemName: "chevron.right")
                                     .font(.caption.weight(.semibold))
@@ -339,44 +339,44 @@ struct VPNProviderDetailView: View {
                     }
 
                     VPNConfirmedToggle(
-                        title: "Use this network only",
+                        title: ui("Use this network only"),
                         isOn: $useThisNetworkOnlyToggle,
                         confirmation: VPNSettingsConfirmations.networkScope
                     )
                 } header: {
-                    Text("Settings")
+                    Text(ui("Settings"))
                 } footer: {
-                    Text("When enabled, locations and Connect use only this subscription.")
+                    Text(ui("When enabled, locations and Connect use only this subscription."))
                 }
             }
 
             if provider.status == .expired {
                 Section {
-                    Button("Renew subscription") {
+                    Button(ui("Renew subscription")) {
                         providerStore.renewSubscription(id: providerID)
-                        updateMessage = "Subscription renewed for 30 days."
+                        updateMessage = ui("Subscription renewed for 30 days.")
                     }
                 }
             }
 
             Section {
-                Button("Support") { showsSupportSheet = true }
-                Button("Edit") { showsEditSheet = true }
+                Button(ui("Support")) { showsSupportSheet = true }
+                Button(ui("Edit")) { showsEditSheet = true }
                 Button {
                     refreshSubscription()
                 } label: {
                     if providerStore.isRefreshing {
                         HStack {
-                            Text("Update subscription")
+                            Text(ui("Update subscription"))
                             Spacer()
                             ProgressView()
                         }
                     } else {
-                        Text("Update subscription")
+                        Text(ui("Update subscription"))
                     }
                 }
                 .disabled(providerStore.isRefreshing)
-                Button("Delete", role: .destructive) { showsDeleteConfirmation = true }
+                Button(ui("Delete"), role: .destructive) { showsDeleteConfirmation = true }
             }
         }
         .listSectionSpacing(.compact)

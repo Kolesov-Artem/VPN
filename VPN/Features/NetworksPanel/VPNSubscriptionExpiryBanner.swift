@@ -49,14 +49,14 @@ struct VPNSubscriptionExpiryBanner: View {
         case let .subscriptionRenewal(providerKind, isExpired):
             if providerKind == .velvetFeatured {
                 if isExpired {
-                    "Your Velvet subscription expired, renew to continue to use it"
+                    ui("Your Velvet subscription expired, renew to continue to use it")
                 } else {
-                    "Your Velvet subscription will end soon, renew to continue to use it"
+                    ui("Your Velvet subscription will end soon, renew to continue to use it")
                 }
             } else if isExpired {
-                "Your subscription expired, renew to continue to use it"
+                ui("Your subscription expired, renew to continue to use it")
             } else {
-                "Your subscription will end soon, renew to continue to use it"
+                ui("Your subscription will end soon, renew to continue to use it")
             }
 
         case let .selectionMismatch(mismatch):
@@ -66,15 +66,15 @@ struct VPNSubscriptionExpiryBanner: View {
 
     private var primaryTitle: String {
         switch mode {
-        case .subscriptionRenewal: "Renew"
-        case .selectionMismatch: "Use Smart Auto"
+        case .subscriptionRenewal: ui("Renew")
+        case .selectionMismatch: ui("Use Smart Auto")
         }
     }
 
     private var secondaryTitle: String {
         switch mode {
-        case .subscriptionRenewal: "Hide"
-        case .selectionMismatch: "Browse locations"
+        case .subscriptionRenewal: ui("Hide")
+        case .selectionMismatch: ui("Browse locations")
         }
     }
 

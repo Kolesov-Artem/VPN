@@ -74,7 +74,7 @@ struct ExpandedSheetCompactBar: View {
                     .background(Color(.tertiarySystemFill), in: Circle())
             }
             .buttonStyle(PressScaleButtonStyle())
-            .accessibilityLabel("Collapse panel")
+            .accessibilityLabel(ui("Collapse panel"))
         }
         .padding(.horizontal, VelvetTheme.horizontalPadding)
         .opacity(scrollEdgeProgress)

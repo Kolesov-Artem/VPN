@@ -8,6 +8,12 @@ struct VPNTrafficUsageCard: View {
     var scopedProviderID: UUID? = nil
     /// Drops the card plate so a grouped list can supply the background and insets.
     var embedInForm = false
+    /// Replaces the provider filter title when the card is scoped to one subscription.
+    var heading: String? = nil
+    /// Hides the title row. The period menu stays, so the chart can still change range.
+    var showsHeading = true
+    /// Hides the usage bars under the chart when a summary above already shows them.
+    var showsUsageMeters = true
 
     @State private var focusedCategory: TrafficCategory?
     @State private var selectedProviderID: UUID?
@@ -129,14 +135,18 @@ struct VPNTrafficUsageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
-                if showsProviderFilter {
-                    providerFilterMenu
+                if showsHeading {
+                    if showsProviderFilter {
+                        providerFilterMenu
+                    } else {
+                        Text(heading ?? scopedUsageFilterTitle)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    Spacer(minLength: 8)
                 } else {
-                    Text(scopedUsageFilterTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 8)
                 periodFilterMenu
             }
 
@@ -147,13 +157,13 @@ struct VPNTrafficUsageCard: View {
                         y: .value("GB", segment.gigabytes),
                         width: .fixed(34)
                     )
-                    .foregroundStyle(by: .value("Category", segment.category.rawValue))
+                    .foregroundStyle(by: .value("Category", ui(segment.category.rawValue)))
                 }
             }
             .chartForegroundStyleScale([
-                TrafficCategory.bypassBlocks.rawValue: TrafficCategory.bypassBlocks.color,
-                TrafficCategory.russianSites.rawValue: TrafficCategory.russianSites.color,
-                TrafficCategory.others.rawValue: TrafficCategory.others.color,
+                ui(TrafficCategory.bypassBlocks.rawValue): TrafficCategory.bypassBlocks.color,
+                ui(TrafficCategory.russianSites.rawValue): TrafficCategory.russianSites.color,
+                ui(TrafficCategory.others.rawValue): TrafficCategory.others.color,
             ])
             .chartXScale(domain: -0.35...6.35)
             .chartYScale(domain: 0...trafficSnapshot.chartYMax)
@@ -186,21 +196,23 @@ struct VPNTrafficUsageCard: View {
 
             trafficCategoryLegend
 
-            Divider()
+            if showsUsageMeters {
+                Divider()
 
-            VStack(alignment: .leading, spacing: 16) {
-                trafficUsageMeter(
-                    percent: trafficSnapshot.wifiUsedPercent,
-                    label: "basic traffic used",
-                    fraction: Double(trafficSnapshot.wifiUsedPercent) / 100,
-                    detail: trafficSnapshot.wifiUsedDetail
-                )
-                trafficUsageMeter(
-                    percent: trafficSnapshot.lteUsedPercent,
-                    label: "LTE traffic used",
-                    fraction: Double(trafficSnapshot.lteUsedPercent) / 100,
-                    detail: trafficSnapshot.lteUsedDetail
-                )
+                VStack(alignment: .leading, spacing: 16) {
+                    trafficUsageMeter(
+                        percent: trafficSnapshot.wifiUsedPercent,
+                        label: ui("basic traffic used"),
+                        fraction: Double(trafficSnapshot.wifiUsedPercent) / 100,
+                        detail: trafficSnapshot.wifiUsedDetail
+                    )
+                    trafficUsageMeter(
+                        percent: trafficSnapshot.lteUsedPercent,
+                        label: ui("LTE traffic used"),
+                        fraction: Double(trafficSnapshot.lteUsedPercent) / 100,
+                        detail: trafficSnapshot.lteUsedDetail
+                    )
+                }
             }
         }
         .padding(embedInForm ? 0 : 16)
@@ -231,7 +243,7 @@ struct VPNTrafficUsageCard: View {
 
     private var providerFilterMenu: some View {
         Menu {
-            Picker("Provider", selection: $selectedProviderID) {
+            Picker(ui("Provider"), selection: $selectedProviderID) {
                 Text(VPNFigmaSection550Copy.allProvidersUsageFilter).tag(UUID?.none)
                 ForEach(providers) { provider in
                     Text(VPNFigmaSection550Copy.providerUsageFilter(providerName: provider.name))
@@ -242,21 +254,21 @@ struct VPNTrafficUsageCard: View {
         } label: {
             filterMenuLabel(title: providerFilterLabel, emphasis: .primary)
         }
-        .accessibilityLabel("Filter by provider")
+        .accessibilityLabel(ui("Filter by provider"))
     }
 
     private var periodFilterMenu: some View {
         Menu {
-            Picker("Period", selection: $selectedPeriod) {
+            Picker(ui("Period"), selection: $selectedPeriod) {
                 ForEach(TrafficUsagePeriod.allCases) { period in
-                    Text(period.rawValue).tag(period)
+                    Text(ui(period.rawValue)).tag(period)
                 }
             }
             .pickerStyle(.inline)
         } label: {
-            filterMenuLabel(title: selectedPeriod.rawValue, emphasis: .secondary)
+            filterMenuLabel(title: ui(selectedPeriod.rawValue), emphasis: .secondary)
         }
-        .accessibilityLabel("Filter by period")
+        .accessibilityLabel(ui("Filter by period"))
     }
 
     private enum FilterMenuEmphasis {
@@ -302,7 +314,7 @@ struct VPNTrafficUsageCard: View {
                     .frame(width: 3, height: 14)
 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(category.rawValue)
+                    Text(ui(category.rawValue))
                         .foregroundStyle(isDimmed ? .secondary : .primary)
                     Text(trafficSnapshot.legendTotal(for: category))
                         .fontWeight(.semibold)

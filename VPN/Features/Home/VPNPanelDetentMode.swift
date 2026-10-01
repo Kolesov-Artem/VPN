@@ -9,15 +9,15 @@ enum VPNPanelDetentMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .stepped: "Three stops"
-        case .direct: "Direct expand"
+        case .stepped: ui("Three stops")
+        case .direct: ui("Direct expand")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .stepped: "Island → half → full, one step per swipe"
-        case .direct: "Collapsed ↔ full; fling skips half; slow release can rest at half"
+        case .stepped: ui("Island → half → full, one step per swipe")
+        case .direct: ui("Collapsed ↔ full; fling skips half; slow release can rest at half")
         }
     }
 }

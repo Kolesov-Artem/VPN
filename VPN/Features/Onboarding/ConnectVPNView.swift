@@ -22,12 +22,12 @@ struct ConnectVPNView: View {
             if isAddingConfiguration {
                 HStack {
                     Spacer()
-                    Button("Cancel", action: onCancel)
+                    Button(ui("Cancel"), action: onCancel)
                         .font(.subheadline.weight(.semibold))
                 }
             }
 
-            Text("Connect VPN")
+            Text(ui("Connect VPN"))
                 .font(.title2.bold())
                 .foregroundStyle(.primary)
 
@@ -42,13 +42,13 @@ struct ConnectVPNView: View {
 
             HStack(spacing: 12) {
                 secondaryButton(
-                    title: "Upload",
+                    title: ui("Upload"),
                     symbol: "folder",
                     action: { isImportingFile = true }
                 )
 
                 secondaryButton(
-                    title: "Scan",
+                    title: ui("Scan"),
                     symbol: "qrcode.viewfinder",
                     action: { isShowingScannerMessage = true }
                 )
@@ -58,7 +58,7 @@ struct ConnectVPNView: View {
                 Button {
                     attemptImport(from: configurationURL)
                 } label: {
-                    Text("Add configuration")
+                    Text(ui("Add configuration"))
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
@@ -74,9 +74,9 @@ struct ConnectVPNView: View {
                             .font(.title)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Use Velvet VPN")
+                            Text(ui("Use Velvet VPN"))
                                 .font(.subheadline.weight(.semibold))
-                            Text("3 days free trial")
+                            Text(ui("3 days free trial"))
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.72))
                         }
@@ -91,7 +91,7 @@ struct ConnectVPNView: View {
                     .background(VelvetTheme.accent, in: RoundedRectangle(cornerRadius: 20))
                 }
                 .buttonStyle(PressScaleButtonStyle())
-                .accessibilityHint("Opens the VPN dashboard")
+                .accessibilityHint(ui("Opens the VPN dashboard"))
             }
         }
         .fileImporter(
@@ -108,14 +108,14 @@ struct ConnectVPNView: View {
                 importError = VPNImportError.unreadable.errorDescription
             }
         }
-        .alert("QR scanner", isPresented: $isShowingScannerMessage) {
-            Button("Use demo configuration") {
+        .alert(ui("QR scanner"), isPresented: $isShowingScannerMessage) {
+            Button(ui("Use demo configuration")) {
                 configurationURL = "velvet://demo-config"
                 attemptImport(from: configurationURL)
             }
-            Button("Cancel", role: .cancel) {}
+            Button(ui("Cancel"), role: .cancel) {}
         } message: {
-            Text("Camera scanning is represented by a local prototype action.")
+            Text(ui("Camera scanning is represented by a local prototype action."))
         }
         .onChange(of: configurationURL) { _, _ in
             importError = nil
@@ -131,7 +131,7 @@ struct ConnectVPNView: View {
                 .padding(.horizontal, 16)
                 .frame(minHeight: 56)
 
-            Button("Paste") {
+            Button(ui("Paste")) {
                 configurationURL = "https://yourvpn.34945"
                 attemptImport(from: configurationURL)
             }

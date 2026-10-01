@@ -10,19 +10,19 @@ enum VPNDNSMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .automatic: "Automatic"
+        case .automatic: ui("Automatic")
         case .cloudflare: "Cloudflare"
         case .google: "Google"
-        case .custom: "Custom"
+        case .custom: ui("Custom")
         }
     }
 
     var servers: String {
         switch self {
-        case .automatic: "Provider default"
+        case .automatic: ui("Provider default")
         case .cloudflare: "1.1.1.1 · 1.0.0.1"
         case .google: "8.8.8.8 · 8.8.4.4"
-        case .custom: "Not configured"
+        case .custom: ui("Not configured")
         }
     }
 }
@@ -42,28 +42,28 @@ struct VPNDNSSettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("DNS mode", selection: dnsMode) {
+                    Picker(ui("DNS mode"), selection: dnsMode) {
                         ForEach(VPNDNSMode.allCases) { mode in
                             Text(mode.title).tag(mode)
                         }
                     }
-                    LabeledContent("Servers", value: dnsMode.wrappedValue.servers)
+                    LabeledContent(ui("Servers"), value: dnsMode.wrappedValue.servers)
                 } footer: {
-                    Text("DNS settings are stored locally in this prototype. No resolver changes are applied.")
+                    Text(ui("DNS settings are stored locally in this prototype. No resolver changes are applied."))
                 }
 
-                Section("Custom DNS") {
-                    TextField("Primary DNS", text: .constant(""))
+                Section(ui("Custom DNS")) {
+                    TextField(ui("Primary DNS"), text: .constant(""))
                         .disabled(dnsMode.wrappedValue != .custom)
-                    TextField("Secondary DNS", text: .constant(""))
+                    TextField(ui("Secondary DNS"), text: .constant(""))
                         .disabled(dnsMode.wrappedValue != .custom)
                 }
             }
-            .navigationTitle("DNS")
+            .navigationTitle(ui("DNS"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
         }

@@ -5,6 +5,8 @@ import SwiftUI
 struct VPNProviderBrandIcon: View {
     let provider: VPNProvider
     var size: CGFloat = VelvetMetrics.islandProviderIconSize
+    /// Collapsed subscription chooser uses ink instead of the purple mark.
+    var usesInkMark: Bool = false
 
     private var usesVelvetMark: Bool {
         provider.kind == .velvetFeatured || provider.name.contains("Velvet")
@@ -13,8 +15,10 @@ struct VPNProviderBrandIcon: View {
     private var gradientColors: [Color] {
         if provider.status == .expired {
             [Color(red: 1, green: 0.45, blue: 0.42), VelvetTheme.errorTint]
-        } else if usesVelvetMark {
-            [VelvetTheme.softPurple, VelvetTheme.accent]
+        } else if usesInkMark || usesVelvetMark {
+            usesInkMark
+                ? [Color.black, Color.black]
+                : [VelvetTheme.softPurple, VelvetTheme.accent]
         } else {
             [
                 VelvetTheme.providerAccent.opacity(0.55),
@@ -60,10 +64,13 @@ struct VPNProviderBrandIcon: View {
 struct VPNProviderBrandLogo: View {
     let provider: VPNProvider
     var size: CGFloat = VelvetMetrics.islandProviderIconSize
+    var usesInkMark: Bool = false
 
     var body: some View {
         Group {
-            if let assetName = VPNBrandCatalog.bundledAssetName(for: provider) {
+            if usesInkMark {
+                VPNProviderBrandIcon(provider: provider, size: size, usesInkMark: true)
+            } else if let assetName = VPNBrandCatalog.bundledAssetName(for: provider) {
                 Image(assetName)
                     .resizable()
                     .scaledToFill()
@@ -75,13 +82,13 @@ struct VPNProviderBrandLogo: View {
                             .resizable()
                             .scaledToFill()
                     case .failure, .empty:
-                        VPNProviderBrandIcon(provider: provider, size: size)
+                        VPNProviderBrandIcon(provider: provider, size: size, usesInkMark: usesInkMark)
                     @unknown default:
-                        VPNProviderBrandIcon(provider: provider, size: size)
+                        VPNProviderBrandIcon(provider: provider, size: size, usesInkMark: usesInkMark)
                     }
                 }
             } else {
-                VPNProviderBrandIcon(provider: provider, size: size)
+                VPNProviderBrandIcon(provider: provider, size: size, usesInkMark: usesInkMark)
             }
         }
         .frame(width: size, height: size)
@@ -149,6 +156,7 @@ struct VPNUseCasePresetsMenu: View {
 struct VPNProviderIconStack: View {
     let providers: [VPNProvider]
     var maxVisible: Int = 3
+    var usesInkMark: Bool = false
 
     private var overflowCount: Int {
         max(0, providers.count - maxVisible)
@@ -158,7 +166,7 @@ struct VPNProviderIconStack: View {
         ZStack(alignment: .topTrailing) {
             HStack(spacing: -12) {
                 ForEach(Array(providers.prefix(maxVisible).enumerated()), id: \.element.id) { index, provider in
-                    VPNProviderBrandLogo(provider: provider)
+                    VPNProviderBrandLogo(provider: provider, usesInkMark: usesInkMark)
                         .overlay {
                             Circle()
                                 .strokeBorder(VelvetTheme.contentSurface, lineWidth: 2)
@@ -202,7 +210,8 @@ struct VPNActiveProviderPickerPill: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(Color.primary)
+        .tint(.primary)
         .padding(.horizontal, 14)
         .frame(height: VelvetMetrics.islandChromeButtonSize)
         .frame(maxWidth: 148)
@@ -217,7 +226,7 @@ struct VPNActiveProviderPickerMenu: View {
 
     private var activeName: String {
         let provider = providers.first(where: { $0.id == activeProviderID }) ?? providers.first
-        return provider?.catalogDisplayName ?? "VPN"
+        return provider?.catalogDisplayName.withoutEmoji ?? "VPN"
     }
 
     var body: some View {
@@ -227,9 +236,9 @@ struct VPNActiveProviderPickerMenu: View {
                     onSelect(provider.id)
                 } label: {
                     if provider.id == activeProviderID {
-                        Label(provider.catalogDisplayName, systemImage: "checkmark")
+                        Label(provider.catalogDisplayName.withoutEmoji, systemImage: "checkmark")
                     } else {
-                        Text(provider.catalogDisplayName)
+                        Text(provider.catalogDisplayName.withoutEmoji)
                     }
                 }
                 .disabled(provider.status == .expired)
@@ -237,6 +246,7 @@ struct VPNActiveProviderPickerMenu: View {
         } label: {
             VPNActiveProviderPickerPill.pickerLabel(activeName)
         }
+        .tint(.primary)
         .accessibilityLabel("Active VPN, \(activeName)")
     }
 }
@@ -295,12 +305,12 @@ struct VPNIslandCollapsedHeader: View {
     private var fastestMultiVPNBody: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(ui(title.withoutEmoji))
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(VelvetTheme.mainTextDark)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
 
-                Text(subtitle)
+                Text(ui(subtitle.withoutEmoji))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -323,19 +333,13 @@ struct VPNIslandCollapsedHeader: View {
     @ViewBuilder
     private var providerSummary: some View {
         let content = HStack(spacing: 12) {
-            if showsMultiProviderSummary {
-                VPNProviderIconStack(providers: providers)
-            } else {
-                VPNProviderBrandLogo(provider: provider)
-            }
-
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(ui(title.withoutEmoji))
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(VelvetTheme.mainTextDark)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
 
-                Text(subtitle)
+                Text(ui(subtitle.withoutEmoji))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -352,6 +356,95 @@ struct VPNIslandCollapsedHeader: View {
     }
 }
 
+// MARK: - Collapsed menu island
+
+/// The two choosers from Bottom menu, used as the collapsed island.
+struct VPNIslandMenuCollapsedHeader: View {
+    let status: String
+    let provider: VPNProvider
+    let providerName: String
+    let locationTitle: String
+    var locationFlag: String?
+    let onProvider: () -> Void
+    let onLocation: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(status)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(VelvetTheme.mainTextDark)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                choice(
+                    title: ui("VPN"),
+                    detail: providerName,
+                    label: ui("VPN") + ", \(providerName)",
+                    action: onProvider
+                ) {
+                    VPNProviderBrandLogo(provider: provider, size: 28)
+                }
+                choice(
+                    title: ui("Location"),
+                    detail: locationTitle,
+                    label: ui("Location") + ", \(locationTitle)",
+                    action: onLocation
+                ) {
+                    if let locationFlag {
+                        Text(locationFlag)
+                            .font(.title3)
+                    } else {
+                        Image(systemName: "globe")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+        .frame(height: VelvetMetrics.menuIslandHeaderHeight, alignment: .top)
+    }
+
+    private func choice<Mark: View>(
+        title: String,
+        detail: String,
+        label: String,
+        action: @escaping () -> Void,
+        @ViewBuilder mark: () -> Mark
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                mark()
+                    .frame(width: 28, height: 28)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(ui(title))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(ui(detail))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
 // MARK: - Primary connect action
 
 struct VPNPrimaryConnectionButton: View {
@@ -360,6 +453,7 @@ struct VPNPrimaryConnectionButton: View {
     var size: ControlSize = .large
     var usesErrorTint = true
     var showsPowerIcon = true
+    var isBusy = false
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -369,7 +463,7 @@ struct VPNPrimaryConnectionButton: View {
             HStack(spacing: 8) {
                 Group {
                     if showsPowerIcon {
-                        if connectionState == .connecting {
+                        if connectionState == .connecting || isBusy {
                             ProgressView()
                                 .controlSize(size)
                                 .tint(.white)
@@ -377,7 +471,7 @@ struct VPNPrimaryConnectionButton: View {
                             Image(systemName: "power")
                                 .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
                         }
-                    } else if connectionState == .connecting {
+                    } else if connectionState == .connecting || isBusy {
                         ProgressView()
                             .controlSize(size)
                             .tint(.white)
@@ -385,7 +479,7 @@ struct VPNPrimaryConnectionButton: View {
                 }
                 .contentTransition(.symbolEffect(.replace))
 
-                Text(title)
+                Text(ui(title))
                     .font(size == .large ? .body.weight(.semibold) : .subheadline.weight(.semibold))
                     .contentTransition(.interpolate)
             }
@@ -397,7 +491,7 @@ struct VPNPrimaryConnectionButton: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .controlSize(size)
-        .disabled(connectionState == .connecting)
+        .disabled(connectionState == .connecting || isBusy)
         .sensoryFeedback(.success, trigger: connectionState) { _, new in
             new.isConnected
         }
@@ -406,8 +500,8 @@ struct VPNPrimaryConnectionButton: View {
         }
         .accessibilityHint(
             connectionState == .connected
-                ? "Disconnects the demo VPN"
-                : "Connects the demo VPN"
+                ? ui("Disconnects the demo VPN")
+                : ui("Connects the demo VPN")
         )
     }
 
@@ -420,5 +514,20 @@ struct VPNPrimaryConnectionButton: View {
         default:
             VelvetTheme.accent
         }
+    }
+}
+
+extension String {
+    /// Drops pictographs so a subscription name reads as plain text.
+    var withoutEmoji: String {
+        let kept = unicodeScalars.filter { scalar in
+            if scalar.value == 0xFE0F || scalar.value == 0x200D { return false }
+            if scalar.properties.isEmojiPresentation { return false }
+            if scalar.properties.isEmoji, scalar.value > 0x238C { return false }
+            return true
+        }
+        return String(String.UnicodeScalarView(kept))
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

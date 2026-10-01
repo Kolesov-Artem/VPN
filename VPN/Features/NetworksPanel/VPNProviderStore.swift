@@ -692,7 +692,7 @@ final class VPNProviderStore {
             provider.lastUpdated = .now
             provider.providerMessageUpdatedAt = .now
             if provider.providerMessage == nil {
-                provider.providerMessage = "Subscription refreshed · \(provider.name)"
+                provider.providerMessage = uiFormat("Subscription refreshed · %@", provider.name)
             }
             if case let .active(count, traffic) = provider.status {
                 provider.status = .active(locationCount: count + Int.random(in: 1...5), trafficRemaining: traffic)

@@ -80,7 +80,7 @@ enum VelvetMetrics {
     static let statsStripProgressCornerRadius: CGFloat = 3
     static let statsStripPingPlaceholder = "000 ms"
     static let statsStripRatePlaceholder = "000 MB/s"
-    static let statsStripLocationPlaceholder = "Saint Petersburg"
+    static var statsStripLocationPlaceholder: String { ui("Saint Petersburg") }
     /// Collapsed stats block: 8pt inset × 2 + one usage row + metrics grid.
     static let statsStripCollapsedHeight: CGFloat =
         statsStripCollapsedInset * 2 + statsStripSectionSpacing + 32 + 39
@@ -101,6 +101,8 @@ enum VelvetMetrics {
     static let islandProviderIconSize: CGFloat = 40
     static let islandChromeButtonSize: CGFloat = 36
     static let islandCollapsedHeaderHeight: CGFloat = 56
+    /// Collapsed Island menu: status line plus the two chooser rows from Bottom menu.
+    static let menuIslandHeaderHeight: CGFloat = 96
     /// Collapsed island header row (separator follows immediately in Figma).
     static var islandHeaderBlockHeight: CGFloat {
         islandCollapsedHeaderHeight
@@ -118,6 +120,11 @@ enum VelvetMetrics {
     /// One line of flag chips below the collapsed island, with room so the capsules are not clipped.
     static let favouriteStripHeight: CGFloat = islandChromeButtonSize + 4
     static let favouriteStripSpacing: CGFloat = 8
+    /// Section title above the chips. Kept in the dock height so the label is not cropped.
+    static let favouriteHeaderHeight: CGFloat = 22
+    static var favouriteDockHeight: CGFloat {
+        favouriteHeaderHeight + favouriteStripSpacing + favouriteStripHeight
+    }
 }
 
 // MARK: - Shared chrome
@@ -194,9 +201,15 @@ extension View {
 
 enum VelvetCollapsedIslandLayout {
     /// Top chrome: grip, status header, and optional stats strip.
-    static func chromeHeight(showsSessionStats: Bool, showsFavouriteStrip _: Bool = false) -> CGFloat {
+    static func chromeHeight(
+        showsSessionStats: Bool,
+        showsFavouriteStrip _: Bool = false,
+        usesMenuCollapsedChrome: Bool = false
+    ) -> CGFloat {
         let headerBlock = BottomPanelDetents.expandedGripBandHeight
-            + VelvetMetrics.islandHeaderBlockHeight
+            + (usesMenuCollapsedChrome
+                ? VelvetMetrics.menuIslandHeaderHeight
+                : VelvetMetrics.islandHeaderBlockHeight)
         guard showsSessionStats else { return headerBlock }
         return headerBlock
             + VelvetMetrics.islandSectionDividerHeight
@@ -207,13 +220,15 @@ enum VelvetCollapsedIslandLayout {
     static func islandHeight(
         showsSessionStats: Bool,
         isAccessibilitySize: Bool,
-        showsFavouriteStrip _: Bool = false
+        showsFavouriteStrip _: Bool = false,
+        usesMenuCollapsedChrome: Bool = false
     ) -> CGFloat {
         let body = VelvetMetrics.collapsedSectionSpacing
             + VelvetMetrics.primaryButtonHeight
             + VelvetMetrics.collapsedBottomPadding
         let height = chromeHeight(
-            showsSessionStats: showsSessionStats
+            showsSessionStats: showsSessionStats,
+            usesMenuCollapsedChrome: usesMenuCollapsedChrome
         ) + body
         return isAccessibilitySize ? height + 56 : height
     }

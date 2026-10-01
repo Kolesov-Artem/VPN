@@ -1,24 +1,33 @@
 import SwiftUI
 
-/// One quiet line of saved places. No section title and no accent colour.
+/// Saved places, with the same section title the location groups use.
 struct VPNFavouriteLocationsStrip: View {
     let entries: [VPNFavouriteLocationEntry]
     var selectedID: String?
+    /// Pulls the title and the first chip in from a full-width row so they line up with the island.
+    var horizontalInset: CGFloat = 0
     let onSelect: (VPNFavouriteLocationEntry) -> Void
     let onRemove: (VPNFavouriteLocationEntry) -> Void
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(entries) { entry in
-                    chip(entry)
+        VStack(alignment: .leading, spacing: VelvetMetrics.favouriteStripSpacing) {
+            VPNPanelSectionHeader(title: ui("Favourites"))
+                .padding(.horizontal, horizontalInset)
+                .frame(height: VelvetMetrics.favouriteHeaderHeight, alignment: .leading)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(entries) { entry in
+                        chip(entry)
+                    }
                 }
+                .padding(.horizontal, horizontalInset)
+                .padding(.vertical, 2)
             }
-            .padding(.horizontal, VelvetMetrics.rowHorizontalPadding)
-            .padding(.vertical, 2)
+            .scrollIndicators(.hidden)
+            .scrollClipDisabled()
+            .frame(height: VelvetMetrics.favouriteStripHeight)
         }
-        .scrollIndicators(.hidden)
-        .frame(height: VelvetMetrics.favouriteStripHeight)
     }
 
     private func chip(_ entry: VPNFavouriteLocationEntry) -> some View {
@@ -44,7 +53,7 @@ struct VPNFavouriteLocationsStrip: View {
         }
         .buttonStyle(PressScaleButtonStyle())
         .contextMenu {
-            Button("Remove from Favourites", systemImage: "star.slash", role: .destructive) {
+            Button(ui("Remove from Favourites"), systemImage: "star.slash", role: .destructive) {
                 onRemove(entry)
             }
         }
@@ -53,7 +62,6 @@ struct VPNFavouriteLocationsStrip: View {
     }
 
     private func chipTitle(_ entry: VPNFavouriteLocationEntry) -> String {
-        let sharesCity = entries.contains { $0.id != entry.id && $0.city == entry.city }
-        return sharesCity ? "\(entry.city) · \(entry.providerName)" : entry.city
+        ui(entry.name.replacingOccurrences(of: "SMART-", with: ""))
     }
 }

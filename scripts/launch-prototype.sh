@@ -47,7 +47,7 @@ xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
 # simctl launch can block on some Xcode/Simulator versions; run detached.
 LAUNCH_FLAGS="${LAUNCH_FLAGS:---multi-provider}"
 # shellcheck disable=SC2086
-xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" --show-home --panel-island $LAUNCH_FLAGS >/dev/null 2>&1 &
+xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" --show-home --panel-island --home-island-menu $LAUNCH_FLAGS >/dev/null 2>&1 &
 sleep 2
 
-echo "Prototype launched on $SIMULATOR_NAME with --show-home --panel-island ${LAUNCH_FLAGS}."
+echo "Prototype launched on $SIMULATOR_NAME with --show-home --panel-island --home-island-menu ${LAUNCH_FLAGS}."

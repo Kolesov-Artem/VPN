@@ -17,7 +17,7 @@ struct VPNCountryPickerSheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(candidate.location.city) · \(candidate.location.kind.title)")
+                                Text("\(ui(candidate.location.city)) · \(candidate.location.kind.title)")
                                     .font(.subheadline.weight(.medium))
                                 Text(candidate.provider.name)
                                     .font(.caption)
@@ -34,11 +34,11 @@ struct VPNCountryPickerSheet: View {
                     }
                 }
             }
-            .navigationTitle("Pick network for \(group.name)")
+            .navigationTitle(uiFormat("Pick network for %@", ui(group.name)))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(ui("Cancel")) { dismiss() }
                 }
             }
         }

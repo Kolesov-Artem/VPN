@@ -11,54 +11,53 @@ struct VPNRoutingSettingsView: View {
             Form {
                 Section {
                     VPNConfirmedToggle(
-                        title: "Route all traffic through VPN",
+                        title: ui("Route all traffic through VPN"),
                         isOn: routesAllTrafficBinding,
                         confirmation: VPNSettingsConfirmations.routeAllTraffic
                     )
-                    Toggle("Bypass local networks", isOn: bypassLocalNetworksBinding)
+                    Toggle(ui("Bypass local networks"), isOn: bypassLocalNetworksBinding)
                 } header: {
-                    Text("Mode")
+                    Text(ui("Mode"))
                 } footer: {
-                    Text("Bypass keeps local printers and home devices reachable while the VPN is active.")
+                    Text(ui("Bypass keeps local printers and home devices reachable while the VPN is active."))
                 }
 
                 Section {
                     ForEach(VPNRoutingDomainRule.samples) { rule in
-                        LabeledContent(rule.domain, value: rule.action)
+                        LabeledContent(rule.domain, value: ui(rule.action))
                     }
                 } header: {
-                    Text("Domain rules")
+                    Text(ui("Domain rules"))
                 } footer: {
-                    Text("Sample rules are read-only in this prototype.")
+                    Text(ui("Sample rules are read-only in this prototype."))
                 }
 
                 Section {
-                    Button("Reset to default", role: .destructive) {
+                    Button(ui("Reset to default"), role: .destructive) {
                         showsResetConfirmation = true
                     }
                 }
             }
-            .navigationTitle("Routing")
+            .navigationTitle(ui("Routing"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(ui("Done")) { dismiss() }
                 }
             }
-            .confirmationDialog(
-                "Reset routing rules?",
+            .confirmationDialog(ui("Reset routing rules?"),
                 isPresented: $showsResetConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Reset", role: .destructive) {
+                Button(ui("Reset"), role: .destructive) {
                     routesAllTraffic = true
                     bypassLocalNetworks = true
                     VPNRoutingPreferences.routesAllTraffic = true
                     VPNRoutingPreferences.bypassLocalNetworks = true
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(ui("Cancel"), role: .cancel) {}
             } message: {
-                Text("All traffic will go through the VPN again and local network bypass will be turned on.")
+                Text(ui("All traffic will go through the VPN again and local network bypass will be turned on."))
             }
         }
     }

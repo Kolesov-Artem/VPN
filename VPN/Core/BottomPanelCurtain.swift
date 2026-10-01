@@ -28,6 +28,8 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     var detentMode: VPNPanelDetentMode = .stepped
     /// Grows the collapsed island by one quiet row when saved places exist.
     var showsFavouriteStrip: Bool = false
+    /// Collapsed card uses the Bottom menu choosers, so the island is taller.
+    var usesMenuCollapsedChrome: Bool = false
     /// When false, rows fade themselves. A single opacity on the whole list would hide that sequence.
     var fadesScrollContentAsGroup: Bool = true
     var onDismissSearch: (() -> Void)?
@@ -59,7 +61,8 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 safeAreaTop: safeAreaTop,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize,
                 showsSessionStats: showsSessionStats,
-                showsFavouriteStrip: showsFavouriteStrip
+                showsFavouriteStrip: showsFavouriteStrip,
+                usesMenuCollapsedChrome: usesMenuCollapsedChrome
             )
             let layout = BottomPanelInterpolator.displayLayout(
                 detents: detents,
@@ -210,10 +213,11 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 radius: layout.shadowRadius,
                 y: layout.shadowY
             )
+            .padding(.horizontal, layout.horizontalInset)
 
             favouriteDock()
                 .frame(
-                    height: VelvetMetrics.favouriteStripHeight * favouriteVisibility,
+                    height: VelvetMetrics.favouriteDockHeight * favouriteVisibility,
                     alignment: .top
                 )
                 .clipped()
@@ -223,7 +227,6 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                 .accessibilityHidden(favouriteVisibility < 0.5)
         }
         .padding(.top, expandedTopInset * layout.sheetMorphProgress)
-        .padding(.horizontal, layout.horizontalInset)
         .padding(.bottom, layout.bottomInset)
     }
 
@@ -311,6 +314,8 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
                         .animation(nil, value: showsSessionStats)
                         .animation(nil, value: showsFavouriteStrip)
                 }
+
+                Spacer(minLength: 0)
             }
         }
         .frame(maxHeight: .infinity)
@@ -347,7 +352,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
     private func panelShapedBackground<S: Shape>(shape: S) -> some View {
         ZStack {
             shape.fill(Color(.systemBackground))
-            if !reduceTransparency, !isDraggingPanel, !isPositionAnimating {
+            if !reduceTransparency {
                 shape.fill(.ultraThickMaterial)
             }
         }
@@ -362,7 +367,7 @@ struct BottomPanelCurtain<Header: View, Stats: View, Footer: View, ScrollContent
             .padding(.top, 8)
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity)
-            .accessibilityLabel("Drag to resize panel")
+            .accessibilityLabel(ui("Drag to resize panel"))
     }
 
     private func gripDragGesture(detents: BottomPanelDetents) -> some Gesture {

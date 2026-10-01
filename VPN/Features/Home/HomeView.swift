@@ -6,6 +6,7 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.ru
     @State private var providerStore = VPNProviderStore()
     @State private var panelPosition = BottomPanelPosition.island
     @State private var connectionState = VPNConnectionState.disconnected
@@ -26,6 +27,8 @@ struct HomeView: View {
     @State private var connectedAt: Date?
     @State private var mockPublicIP = "185.42.18.90"
     @State private var sessionStats = VPNSessionStatsModel()
+    @State private var serviceAvailability = ServiceAvailabilityModel()
+    @State private var isServiceListExpanded = CommandLine.arguments.contains("--sites-open")
     @State private var shouldAutoConnect = false
     @State private var showsVPNPermissionRequest = false
     @State private var importedProviderPendingPrimary: VPNProvider?
@@ -35,6 +38,7 @@ struct HomeView: View {
     @AppStorage("velvet.panelStyle") private var panelStyle = VPNPanelStyle.island
     @AppStorage("velvet.panelDetentMode") private var panelDetentMode = VPNPanelDetentMode.stepped
     @AppStorage("velvet.homeFormat") private var homeFormat = VPNHomeFormat.classic
+    @AppStorage(VPNHomeChrome.storageKey) private var homeChrome = VPNHomeChrome.island
     @AppStorage("velvet.autoConnect") private var autoConnect = false
     @AppStorage("velvet.connectLastLocation") private var connectLastLocation = true
     @AppStorage("velvet.defaultUserJob") private var defaultUserJobRaw = VPNUserJob.streaming.rawValue
@@ -60,19 +64,26 @@ struct HomeView: View {
         let initialPanelPosition = BottomPanelPosition.island
 #endif
         _panelPosition = State(initialValue: initialPanelPosition)
+        _isServiceListExpanded = State(
+            initialValue: CommandLine.arguments.contains("--availability-open")
+        )
     }
 
     var body: some View {
         Group {
-            if homeFormat == .networksAndLocations {
-                networksIslandLayout
-            } else {
-                switch panelStyle {
-                case .island:
-                    islandLayout
-                case .sheet:
-                    sheetLayout
+            if homeChrome == .island || homeChrome == .islandMenu {
+                if homeChrome == .islandMenu || homeFormat == .networksAndLocations {
+                    networksIslandLayout
+                } else {
+                    switch panelStyle {
+                    case .island:
+                        islandLayout
+                    case .sheet:
+                        sheetLayout
+                    }
                 }
+            } else {
+                simpleHome
             }
         }
         .sheet(isPresented: Binding(
@@ -86,6 +97,7 @@ struct HomeView: View {
                     isVPNConnected: connectionState == .connected,
                     activeConnectionProviderID: resolvedConnection?.provider.id
                 )
+                .id(appLanguage)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
@@ -109,22 +121,23 @@ struct HomeView: View {
         } message: {
             Text(VPNFigmaSection550Copy.makeMainVPNPromptMessage)
         }
-        .id(homeFormat)
-        .sheet(isPresented: $showsAccount) {
+        .id("\(homeFormat.rawValue)-\(appLanguage)")
+        .fullScreenCover(isPresented: $showsAccount) {
             VPNAccountView(providerStore: providerStore) { id in
                 showsAccount = false
                 providerSettingsID = id
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+            .id(appLanguage)
         }
 #if DEBUG
         .sheet(isPresented: $showsSettings) {
             settingsSheet
+                .id(appLanguage)
         }
 #endif
         .sheet(isPresented: $showsRoutingSettings) {
             VPNRoutingSettingsView()
+                .id(appLanguage)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -203,15 +216,15 @@ struct HomeView: View {
             }
         }
         .alert(
-            "\"Velvet\" Would Like to Add VPN Configurations",
+            ui("\"Velvet\" Would Like to Add VPN Configurations"),
             isPresented: $showsVPNPermissionRequest
         ) {
-            Button("Don't Allow", role: .cancel) {}
-            Button("Allow") {
+            Button(ui("Don't Allow"), role: .cancel) {}
+            Button(ui("Allow")) {
                 grantVPNPermissionAndConnect()
             }
         } message: {
-            Text("All network activity may be filtered or monitored.")
+            Text(ui("All network activity may be filtered or monitored."))
         }
     }
 
@@ -237,11 +250,42 @@ struct HomeView: View {
         ) else {
             return
         }
-        guard panelPosition == .island else { return }
+        guard panelPosition == .island, homeChrome != .islandMenu else { return }
         didAutoPresentRenewalPanel = true
         withAnimation(VelvetMotion.panel(reduceMotion: reduceMotion)) {
             panelPosition = .intermediate
         }
+    }
+
+    private var simpleHome: some View {
+        SimpleHomeHost(
+            chrome: homeChrome,
+            providerStore: providerStore,
+            route: $route,
+            connectionState: $connectionState,
+            selectedLocation: $selectedLocation,
+            locationSelection: $locationSelection,
+            selectionSource: $selectionSource,
+            resolvedConnection: $resolvedConnection,
+            isSwitchingServer: $isSwitchingServer,
+            connectedAt: $connectedAt,
+            shouldAutoConnect: $shouldAutoConnect,
+            showsAccount: $showsAccount,
+            providerSettingsID: $providerSettingsID,
+            isAddingConfiguration: $isAddingConfiguration,
+            serviceAvailability: serviceAvailability,
+            sessionStats: sessionStats,
+            importToastMessage: importToastMessage,
+            highlightedProvider: highlightedProvider,
+            onImportSuccess: handleImportSuccess,
+            onVelvetTrial: handleVelvetTrial,
+            onImportCancel: handleImportCancel
+        )
+    }
+
+    private var highlightedProvider: VPNProvider? {
+        guard let highlightID = providerStore.highlightedProviderID else { return nil }
+        return providerStore.provider(id: highlightID)
     }
 
     private var networksIslandLayout: some View {
@@ -263,7 +307,8 @@ struct HomeView: View {
                 sessionStats: sessionStats,
                 safeAreaBottom: safeAreaBottom,
                 safeAreaTop: safeAreaTop,
-                detentMode: panelDetentMode
+                detentMode: panelDetentMode,
+                usesMenuCollapsedChrome: homeChrome == .islandMenu
             )
         }
     }
@@ -342,37 +387,46 @@ struct HomeView: View {
             ZStack(alignment: .bottom) {
                 VelvetMapBackground(
                     selectedLocation: selectedLocation,
-                    isConnected: connectionState.isConnected,
+                    connectionState: connectionState,
                     isInteractive: route == .home,
                     autoRotates: route == .onboarding,
-                    includesBottomContrast: route == .home,
                     onPickCoordinate: selectNearestServer
                 )
                 .animation(nil, value: panelPosition)
 
                 VStack(spacing: 0) {
                     header
+                    if route == .home {
+                        if isServiceListExpanded {
+                            ServiceAvailabilityCard(
+                                model: serviceAvailability,
+                                isVPNConnected: connectionState.isConnected
+                            )
+                            .transition(
+                                VelvetMotion.availabilityExpandTransition(reduceMotion: reduceMotion)
+                            )
+                            .padding(.horizontal, VelvetTheme.horizontalPadding)
+                            .padding(.top, 14)
+                        }
+
+                        if let highlightID = providerStore.highlightedProviderID,
+                           let highlightedProvider = providerStore.provider(id: highlightID) {
+                            MapProviderHighlightCard(provider: highlightedProvider)
+                                .padding(.horizontal, VelvetTheme.horizontalPadding)
+                                .padding(.top, 8)
+                                .transition(VelvetMotion.importToast(reduceMotion: reduceMotion))
+                                .allowsHitTesting(false)
+                        }
+                    }
                     Spacer()
                 }
                 .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
+                .animation(VelvetMotion.importToastAnimation(reduceMotion: reduceMotion), value: providerStore.highlightedProviderID)
+                .animation(VelvetMotion.availabilityExpand(reduceMotion: reduceMotion), value: isServiceListExpanded)
 
                 if route == .home {
                     panel(safeAreaBottom, safeAreaTop, detents)
                         .transition(VelvetMotion.homeContent(reduceMotion: reduceMotion))
-                }
-
-                if route == .home,
-                   let highlightID = providerStore.highlightedProviderID,
-                   let highlightedProvider = providerStore.provider(id: highlightID) {
-                    VStack(spacing: 0) {
-                        MapProviderHighlightCard(provider: highlightedProvider)
-                            .padding(.horizontal, VelvetTheme.horizontalPadding)
-                            .padding(.top, safeAreaTop + 63)
-                        Spacer()
-                    }
-                    .transition(VelvetMotion.importToast(reduceMotion: reduceMotion))
-                    .allowsHitTesting(false)
-                    .zIndex(1)
                 }
 
                 if route == .onboarding {
@@ -589,6 +643,14 @@ struct HomeView: View {
         guard match != selectedLocation else { return }
 
         selectedLocation = match
+
+        let providerID = providerStore.activeProviderID
+            ?? providerStore.providers.first(where: \.isEligibleForAutoConnect)?.id
+        if let providerID {
+            let selection = VPNLocationSelection.manual(location: match, providerID: providerID)
+            locationSelection = selection
+            selectionSource = .location(selection)
+        }
     }
 
     private var header: some View {
@@ -611,7 +673,7 @@ struct HomeView: View {
                         .background(.regularMaterial, in: Circle())
                 }
                 .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel("Add VPN configuration")
+                .accessibilityLabel(ui("Add VPN configuration"))
                 .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
 
                 Button {
@@ -624,13 +686,30 @@ struct HomeView: View {
                         .background(.regularMaterial, in: Circle())
                 }
                 .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel("Account")
+                .accessibilityLabel(ui("Account"))
+                .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
+            }
+        }
+        .overlay {
+            if route == .home {
+                ServiceAvailabilityPill(
+                    model: serviceAvailability,
+                    isVPNConnected: connectionState.isConnected,
+                    isExpanded: isServiceListExpanded,
+                    action: toggleServiceList
+                )
                 .transition(VelvetMotion.headerControl(reduceMotion: reduceMotion))
             }
         }
         .padding(.horizontal, VelvetTheme.islandHorizontalInset)
         .padding(.top, 12)
         .animation(VelvetMotion.route(reduceMotion: reduceMotion), value: route)
+    }
+
+    private func toggleServiceList() {
+        withAnimation(VelvetMotion.availabilityExpand(reduceMotion: reduceMotion)) {
+            isServiceListExpanded.toggle()
+        }
     }
 
     private func onboardingOverlay(safeAreaBottom: CGFloat) -> some View {
@@ -671,6 +750,12 @@ struct HomeView: View {
     private func confirmImportedProviderAsMain() {
         guard let provider = importedProviderPendingPrimary else { return }
         providerStore.setActiveProvider(id: provider.id)
+        if provider.includesPresets {
+            locationSelection = .smartAuto(scope: providerStore.providerScope)
+            selectionSource = .useCase(.smart)
+            importedProviderPendingPrimary = nil
+            return
+        }
         locationSelection = VPNConnectionPlanner.reconcileSelection(
             locationSelection,
             providers: providerStore.providers,
@@ -709,6 +794,13 @@ struct HomeView: View {
             homeFormat = .networksAndLocations
             panelPosition = .island
             applyImportedOnlyDemoSelection()
+        } else if CommandLine.arguments.contains("--home-island-menu") {
+            providerStore.applyPrototypeScenario(.velvetPlusImported)
+            homeFormat = .networksAndLocations
+            panelPosition = .island
+            locationSelection = .smartAuto(scope: providerStore.providerScope)
+            selectionSource = .useCase(.smart)
+            providerStore.reconcileActiveProvider()
         } else if CommandLine.arguments.contains("--multi-provider")
             || (CommandLine.arguments.contains("--show-home") && !CommandLine.arguments.contains("--promo-demo")) {
             providerStore.applyPrototypeScenario(.velvetPlusImported)

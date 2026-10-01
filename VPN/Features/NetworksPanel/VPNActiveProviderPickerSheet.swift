@@ -249,7 +249,7 @@ struct VPNSubscriptionsPage: View {
         .toolbar {
             if showsCloseButton {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button(ui("Close")) { dismiss() }
                 }
             }
         }

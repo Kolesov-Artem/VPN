@@ -15,29 +15,29 @@ enum VPNPrototypeScenario: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .onboarding: "1. Onboarding"
-        case .importedOnly: "2. Other VPN only"
-        case .velvetOnly: "3. Velvet only"
-        case .velvetPlusImported: "4. Velvet + other VPN"
-        case .velvetExpired: "5. Velvet expired"
-        case .importedExpired: "6. Other VPN expired"
+        case .onboarding: ui("1. Onboarding")
+        case .importedOnly: ui("2. Other VPN only")
+        case .velvetOnly: ui("3. Velvet only")
+        case .velvetPlusImported: ui("4. Velvet + other VPN")
+        case .velvetExpired: ui("5. Velvet expired")
+        case .importedExpired: ui("6. Other VPN expired")
         }
     }
 
     var detail: String {
         switch self {
         case .onboarding:
-            "Nothing configured yet"
+            ui("Nothing configured yet")
         case .importedOnly:
-            "No presets · purple stats promo"
+            ui("No presets · purple stats promo")
         case .velvetOnly:
-            "Presets on · no Velvet ads"
+            ui("Presets on · no Velvet ads")
         case .velvetPlusImported:
-            "Active subscription switches the VPN · All subscriptions shows every location"
+            ui("Active subscription switches the VPN · All subscriptions shows every location")
         case .velvetExpired:
-            "Velvet renewal card · no purple frame"
+            ui("Velvet renewal card · no purple frame")
         case .importedExpired:
-            "Imported renewal inside purple Velvet upsell"
+            ui("Imported renewal inside purple Velvet upsell")
         }
     }
 

@@ -33,7 +33,7 @@ struct ConnectionStatsStrip: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection stats. Tap for details.")
+        .accessibilityLabel(ui("Connection stats. Tap for details."))
         .accessibilityAddTraits(onTap == nil ? [] : .isButton)
     }
 
@@ -106,12 +106,12 @@ struct ConnectionStatsStrip: View {
 
     private var statsRow: some View {
         HStack(alignment: .top, spacing: 0) {
-            statColumn(title: "Location", value: regionLabel)
+            statColumn(title: ui("Location"), value: regionLabel)
 
             Spacer(minLength: 8)
 
             metricColumn(
-                title: "Ping",
+                title: ui("Ping"),
                 value: "\(pingMs)",
                 unit: "ms",
                 placeholder: VelvetMetrics.statsStripPingPlaceholder
@@ -119,11 +119,11 @@ struct ConnectionStatsStrip: View {
 
             Spacer(minLength: 8)
 
-            rateColumn(title: "Upload", rate: uploadRate)
+            rateColumn(title: ui("Upload"), rate: uploadRate)
 
             Spacer(minLength: 8)
 
-            rateColumn(title: "Download", rate: downloadRate)
+            rateColumn(title: ui("Download"), rate: downloadRate)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -31,12 +31,23 @@ enum VelvetTheme {
         green: 150 / 255,
         blue: 255 / 255
     )
+    /// Page wash behind the hero and dashboard (Figma #F8F5FF).
+    static let pageWash = Color(
+        red: 248 / 255,
+        green: 245 / 255,
+        blue: 255 / 255
+    )
 
     static let connectedGreen = Color(
         red: 0 / 255,
         green: 178 / 255,
         blue: 63 / 255
     )
+
+    /// Dotted-map washes from the three backdrop frames: off, connecting, on.
+    static let mapDisconnected = Color(red: 124 / 255, green: 42 / 255, blue: 246 / 255)
+    static let mapConnecting = Color(red: 236 / 255, green: 146 / 255, blue: 78 / 255)
+    static let mapConnected = Color(red: 31 / 255, green: 150 / 255, blue: 73 / 255)
 
     static let connectedTint = connectedGreen
     static let disconnectedTint = accent
@@ -132,7 +143,7 @@ struct VelvetBrand: View {
         }
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Velvet VPN")
+        .accessibilityLabel(ui("Velvet VPN"))
     }
 }
 

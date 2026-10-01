@@ -85,7 +85,7 @@ struct VelvetVPNStatisticsCard: View {
             }
 
             if let providerMessage {
-                Text(providerMessage)
+                Text(ui(providerMessage))
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -102,7 +102,13 @@ struct VelvetVPNStatisticsCard: View {
             chartLegend
 
             if let messageUpdatedAt {
-                Text("Updated \(messageUpdatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text(uiFormat(
+                    "Updated %@",
+                    messageUpdatedAt.formatted(
+                        Date.FormatStyle(date: .abbreviated, time: .shortened)
+                            .locale(Locale(identifier: AppLanguage.code))
+                    )
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,7 +128,7 @@ struct VelvetVPNStatisticsCard: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Velvet VPN statistics")
+        .accessibilityLabel(ui("Velvet VPN statistics"))
     }
 
     private var protectionChart: some View {
@@ -171,15 +177,15 @@ struct VelvetVPNStatisticsCard: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 legendPill(
-                    title: "\(protectedTotal)h Protected",
+                    title: uiFormat("%lldh Protected", protectedTotal),
                     color: Color(.systemBlue)
                 )
                 legendPill(
-                    title: "\(offlineTotal)h Offline",
+                    title: uiFormat("%lldh Offline", offlineTotal),
                     color: Color(.systemGray3)
                 )
                 legendPill(
-                    title: "avg \(averageProtectedHours)h",
+                    title: uiFormat("avg %lldh", averageProtectedHours),
                     color: Color(.systemBlue).opacity(0.7)
                 )
             }
@@ -187,16 +193,16 @@ struct VelvetVPNStatisticsCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     legendPill(
-                        title: "\(protectedTotal)h Protected",
+                        title: uiFormat("%lldh Protected", protectedTotal),
                         color: Color(.systemBlue)
                     )
                     legendPill(
-                        title: "\(offlineTotal)h Offline",
+                        title: uiFormat("%lldh Offline", offlineTotal),
                         color: Color(.systemGray3)
                     )
                 }
                 legendPill(
-                    title: "avg \(averageProtectedHours)h",
+                    title: uiFormat("avg %lldh", averageProtectedHours),
                     color: Color(.systemBlue).opacity(0.7)
                 )
             }

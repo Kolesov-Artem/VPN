@@ -18,8 +18,8 @@ struct VPNLocationFilterMenu: View {
 
     var body: some View {
         Menu {
-            Section("Server type") {
-                Picker("Server type", selection: $query.filter) {
+            Section(ui("Server type")) {
+                Picker(ui("Server type"), selection: $query.filter) {
                     ForEach(VPNLocationFilter.allCases) { option in
                         Text(option.title).tag(option)
                     }
@@ -27,8 +27,8 @@ struct VPNLocationFilterMenu: View {
                 .pickerStyle(.inline)
             }
 
-            Section("Sort by") {
-                Picker("Sort by", selection: $query.sort) {
+            Section(ui("Sort by")) {
+                Picker(ui("Sort by"), selection: $query.sort) {
                     ForEach(VPNLocationSort.allCases) { option in
                         Text(option.title).tag(option)
                     }
@@ -38,21 +38,21 @@ struct VPNLocationFilterMenu: View {
 
             Section {
                 Toggle(isOn: $query.fastOnly) {
-                    Label("Under \(VPNLocation.fastPingThreshold) ms", systemImage: "bolt.fill")
+                    Label(uiFormat("Under %lld ms", VPNLocation.fastPingThreshold), systemImage: "bolt.fill")
                 }
 
                 if !query.isDefault {
                     Button(role: .destructive) {
                         query.resetFilters()
                     } label: {
-                        Label("Reset filters", systemImage: "arrow.counterclockwise")
+                        Label(ui("Reset filters"), systemImage: "arrow.counterclockwise")
                     }
                 }
             }
         } label: {
             filterButtonLabel
         }
-        .accessibilityLabel("Filter and sort servers")
+        .accessibilityLabel(ui("Filter and sort servers"))
     }
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency

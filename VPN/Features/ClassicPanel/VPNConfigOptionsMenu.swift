@@ -30,7 +30,7 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
                 Button {
                     onAction(.support)
                 } label: {
-                    Label("Support", systemImage: "paperplane")
+                    Label(ui("Support"), systemImage: "paperplane")
                 }
             }
             .controlGroupStyle(.compactMenu)
@@ -40,28 +40,28 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
                     Button {
                         onAction(.providerSettings)
                     } label: {
-                        Label("Provider settings", systemImage: "gearshape")
+                        Label(ui("Provider settings"), systemImage: "gearshape")
                     }
                 }
                 Button {
                     onAction(.routing)
                 } label: {
-                    Label("Routing", systemImage: "arrow.triangle.branch")
+                    Label(ui("Routing"), systemImage: "arrow.triangle.branch")
                 }
                 Button {
                     onAction(.updateSubscription)
                 } label: {
-                    Label("Update subscription", systemImage: "arrow.clockwise.circle")
+                    Label(ui("Update subscription"), systemImage: "arrow.clockwise.circle")
                 }
                 Button {
                     onAction(.checkPing)
                 } label: {
-                    Label("Check ping", systemImage: "speedometer")
+                    Label(ui("Check ping"), systemImage: "speedometer")
                 }
                 Button {
                     onAction(.edit)
                 } label: {
-                    Label("Edit", systemImage: "square.and.pencil")
+                    Label(ui("Edit"), systemImage: "square.and.pencil")
                 }
             }
 
@@ -70,7 +70,7 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
                     showsDeleteConfirmation = true
                 } label: {
                     Label {
-                        Text("Delete")
+                        Text(ui("Delete"))
                     } icon: {
                         Image(systemName: "trash")
                             .foregroundStyle(.red)
@@ -80,6 +80,6 @@ struct VPNConfigOptionsMenu<MenuLabel: View>: View {
         } label: {
             label()
         }
-        .accessibilityLabel("More options")
+        .accessibilityLabel(ui("More options"))
     }
 }
